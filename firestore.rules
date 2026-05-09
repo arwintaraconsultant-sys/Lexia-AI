@@ -1,0 +1,92 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 3. Global Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Path Specific Rules ---
+
+    // USERS
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      allow update: if isOwner(userId) && isValidUser(incoming()) && (
+        incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'updatedAt'])
+      );
+
+      function isValidUser(data) {
+        return data.uid == request.auth.uid &&
+               data.email is string && data.email.size() <= 256 &&
+               (data.displayName == null || (data.displayName is string && data.displayName.size() <= 128)) &&
+               (data.photoURL == null || (data.photoURL is string && data.photoURL.size() <= 1024)) &&
+               (data.get('updatedAt', null) == null || data.updatedAt is timestamp);
+      }
+    }
+
+    // CHATS
+    match /chats/{chatId} {
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isOwner(existing().userId);
+      allow create: if isSignedIn() && isOwner(incoming().userId) && isValidId(chatId) && isValidChat(incoming());
+      allow update: if isOwner(existing().userId) && isValidChat(incoming()) && (
+        incoming().diff(existing()).affectedKeys().hasOnly(['title', 'lastMessage', 'updatedAt'])
+      );
+      allow delete: if isOwner(existing().userId);
+
+      function isValidChat(data) {
+        return data.userId == request.auth.uid &&
+               data.title is string && data.title.size() <= 256 &&
+               (data.get('lastMessage', null) == null || (data.lastMessage is string && data.lastMessage.size() <= 1024)) &&
+               (data.get('updatedAt', null) == null || data.updatedAt is timestamp) &&
+               data.createdAt == (resource == null ? request.time : resource.data.createdAt);
+      }
+    }
+
+    // MESSAGES
+    match /chats/{chatId}/messages/{messageId} {
+      function getChat() {
+        return get(/databases/$(database)/documents/chats/$(chatId)).data;
+      }
+
+      allow list, get: if isSignedIn() && getChat().userId == request.auth.uid;
+      allow create: if isSignedIn() && 
+                    getChat().userId == request.auth.uid && 
+                    isValidId(messageId) && 
+                    isValidMessage(incoming());
+      
+      function isValidMessage(data) {
+        return data.role in ['user', 'assistant'] &&
+               data.content is string && data.content.size() <= 10000 &&
+               data.createdAt == request.time &&
+               // Prevent client from spoofing assistant role unless it's a specific internal flow? 
+               // In some apps, assistant messages are written by a cloud function or backend.
+               // If client writes assistant message, we need to be careful.
+               // For this SPA, we'll allow it if it's the chat owner writing.
+               true;
+      }
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Leksia",
+  "description": "Asisten Hukum AI Indonesia terdepan. Riset peraturan, analisis dokumen, dan konsultasi hukum Indonesia secara cerdas.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": []
+}
