@@ -114,6 +114,15 @@ interface ChatSession {
   lastMessage?: string;
 }
 
+interface UploadHistoryItem {
+  id: string;
+  name: string;
+  size: string;
+  date: string;
+  url: string;
+  type: string;
+}
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -139,9 +148,40 @@ export default function App() {
   const [zoomLevel, setZoomLevel] = useState(100);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(3);
+  const [uploadHistory, setUploadHistory] = useState<UploadHistoryItem[]>([
+    { id: '1', name: 'Putusan_MK_No_90.pdf', size: '2.4 MB', date: 'Hari ini', url: 'https://drive.google.com/file/d/1', type: 'application/pdf' },
+    { id: '2', name: 'Kontrak_Kerja_Sama.docx', size: '1.1 MB', date: 'Kemarin', url: 'https://docs.google.com/document/d/2', type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+  ]);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const editorRef = useRef<HTMLDivElement>(null);
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const handleAutoUpload = (files: FileList) => {
+    setToast({ message: `Mengunggah ${files.length} dokumen ke Google Drive...`, type: 'info' });
+    
+    const newItems: UploadHistoryItem[] = Array.from(files).map(file => ({
+      id: Math.random().toString(36).substr(2, 9),
+      name: file.name,
+      size: formatFileSize(file.size),
+      date: 'Baru saja',
+      url: file.type.includes('pdf') ? 'https://drive.google.com/file/d/1' : 'https://docs.google.com/document/u/0/',
+      type: file.type
+    }));
+
+    setTimeout(() => {
+       setUploadHistory(prev => [...newItems, ...prev]);
+       setToast({ message: "Berhasil diunggah dan disimpan otomatis ke Google Drive!", type: 'success' });
+       setTimeout(() => setToast(null), 3000);
+    }, 2000);
+  };
 
   const applyFormat = (command: string, value: string = '') => {
     document.execCommand(command, false, value);
@@ -208,7 +248,7 @@ export default function App() {
     googleDrive: true
   });
   const [lawFirmProfile, setLawFirmProfile] = useState({
-    name: 'Arwintara Consultant',
+    name: 'Lexsia.ai',
     address: 'Jakarta, Indonesia',
     contact: 'Telepon. 089673797229/081369969969 Kodepos 54317',
     logo: null as string | null
@@ -691,6 +731,14 @@ export default function App() {
                type: 'text/plain',
                data: `data:text/plain;base64,${base64Text}`
              });
+             
+             // Auto-save to Google Drive
+             handleAutoUpload({
+               length: 1,
+               item: (i: number) => i === 0 ? file : null,
+               [Symbol.iterator]: function* () { yield file; }
+             } as unknown as FileList);
+
              setError(`File Word "${file.name}" berhasil dikonversi ke teks dan dilampirkan.`);
              setTimeout(() => setError(null), 3000);
            } catch (err) {
@@ -725,6 +773,14 @@ export default function App() {
            type: file.type,
            data: fileData
          });
+         
+         // Auto-save to Google Drive
+         handleAutoUpload({
+           length: 1,
+           item: (i: number) => i === 0 ? file : null,
+           [Symbol.iterator]: function* () { yield file; }
+         } as unknown as FileList);
+
          setError(`File "${file.name}" berhasil dilampirkan.`);
          setTimeout(() => setError(null), 3000);
        };
@@ -752,7 +808,7 @@ export default function App() {
           xmlns='http://www.w3.org/TR/REC-html40'>
       <head>
         <meta charset='utf-8'>
-        <title>Leksia Document</title>
+        <title>Lexsia Document</title>
         <!--[if gte mso 9]>
         <xml>
           <w:WordDocument>
@@ -833,7 +889,7 @@ export default function App() {
     const fileDownload = document.createElement("a");
     document.body.appendChild(fileDownload);
     fileDownload.href = url;
-    fileDownload.download = (activeDocument.name || 'Leksia-Document') + '.doc';
+    fileDownload.download = (activeDocument.name || 'Lexsia-Document') + '.doc';
     fileDownload.click();
     
     setTimeout(() => {
@@ -1009,7 +1065,16 @@ export default function App() {
     setToast({ message: `Menyimpan "${fileName}" ke Google Drive...`, type: 'info' });
     
     setTimeout(() => {
-      setToast({ message: `Berhasil disimpan ke Google Drive dalam folder "Leksia AI".`, type: 'success' });
+      const newHistoryItem: UploadHistoryItem = {
+        id: Math.random().toString(36).substr(2, 9),
+        name: fileName.endsWith('.docx') || fileName.endsWith('.pdf') ? fileName : `${fileName}.docx`,
+        size: formatFileSize(content.length), // Estimated size
+        date: 'Baru saja',
+        url: 'https://docs.google.com/document/u/0/',
+        type: 'application/vnd.google-apps.document'
+      };
+      setUploadHistory(prev => [newHistoryItem, ...prev]);
+      setToast({ message: `Berhasil disimpan ke Google Drive dalam folder "Lexsia AI".`, type: 'success' });
       setTimeout(() => setToast(null), 3000);
     }, 2000);
   };
@@ -1025,57 +1090,270 @@ export default function App() {
 
   if (!user) {
     return (
-      <div className="h-screen w-screen flex flex-col items-center justify-center mesh-gradient p-4 overflow-hidden relative">
-        <div className="absolute inset-0 bg-black/40 z-0"></div>
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="max-w-md w-full glass-panel p-8 rounded-[2rem] z-10 text-center relative overflow-hidden"
-        >
-          <div className="absolute -top-24 -right-24 w-48 h-48 bg-blue-600/20 rounded-full blur-3xl"></div>
-          <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-legal-gold/10 rounded-full blur-3xl"></div>
-          
-          <div className="w-20 h-20 bg-gradient-to-tr from-blue-600 to-indigo-400 rounded-2xl flex items-center justify-center mx-auto mb-8 shadow-2xl shadow-blue-500/20 -rotate-6">
-             <Scale className="text-white w-12 h-12" />
+      <div className="min-h-screen w-full bg-heritage-bone text-heritage-ink font-sans selection:bg-heritage-gold selection:text-white overflow-x-hidden">
+        {/* Navigation */}
+        <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-12 py-8 bg-heritage-bone/80 backdrop-blur-md border-b border-heritage-ink/5">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-heritage-ink flex items-center justify-center p-2">
+              <Scale className="text-heritage-gold w-full h-full" />
+            </div>
+            <span className="font-serif font-bold text-xl tracking-tight">Lexsia.ai</span>
           </div>
-          <h1 className="text-4xl font-serif font-bold text-white mb-2 tracking-tight">Leksia</h1>
-          <p className="text-slate-400 mb-10 font-medium uppercase tracking-[0.2em] text-[10px]">Legal Intelligence Indonesia</p>
-          
-          <div className="space-y-4 mb-10 text-left">
-            {[
-              { icon: BookOpen, title: "Riset Peraturan", desc: "Dasar hukum dari ribuan regulasi Indonesia." },
-              { icon: FileText, title: "Analisis Dokumen", desc: "Pahami risiko dalam kontrak atau surat legal." },
-              { icon: ShieldCheck, title: "Privasi Terjamin", desc: "Standar keamanan industri untuk data legal." }
-            ].map((item, i) => (
-              <div key={i} className="flex items-start gap-4 p-3 rounded-xl hover:bg-white/5 transition-colors border border-transparent hover:border-white/5 group">
-                <div className="bg-white/10 p-2.5 rounded-lg group-hover:bg-blue-600/20 transition-colors">
-                  <item.icon className="w-5 h-5 text-blue-400"/>
+          <motion.button 
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={handleLogin}
+            className="flex items-center gap-3 px-6 py-2.5 bg-heritage-ink text-white text-xs font-bold uppercase tracking-widest hover:bg-heritage-gold transition-colors"
+          >
+            <img src="https://www.google.com/favicon.ico" className="w-3 h-3 brightness-0 invert" alt="Google" />
+            Akses Member
+          </motion.button>
+        </nav>
+
+        {/* Hero Section */}
+        <section className="relative pt-40 pb-20 px-6 md:px-12 min-h-[90vh] flex flex-col items-center justify-center text-center">
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, ease: "easeOut" }}
+            className="max-w-5xl"
+          >
+            <span className="text-[10px] uppercase tracking-[0.4em] font-black text-heritage-gold mb-6 block">Kecerdasan Hukum Masa Depan</span>
+            <h1 className="text-6xl md:text-8xl lg:text-[10vw] font-serif font-bold leading-[0.9] tracking-tighter mb-8">
+              Keadilan yang <br/> <span className="italic font-normal">Beradab.</span>
+            </h1>
+            <p className="text-lg md:text-xl text-heritage-ink/60 max-w-2xl mx-auto font-light leading-relaxed mb-12">
+              Integrasi kecerdesan buatan dengan kearifan hukum Indonesia. 
+              Membangun fondasi legal yang kokoh bagi masa depan Nusantara bersama Lexsia.ai.
+            </p>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
+              <button 
+                onClick={handleLogin}
+                className="group relative px-10 py-5 bg-heritage-ink text-white text-sm font-bold uppercase tracking-widest overflow-hidden transition-all hover:pr-14"
+              >
+                <span className="relative z-10">Mulai Konsultasi</span>
+                <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 opacity-0 group-hover:opacity-100 transition-all" />
+              </button>
+              <div className="flex items-center gap-4 py-4 sm:py-0 border-t sm:border-t-0 sm:border-l border-heritage-ink/10 sm:pl-8">
+                <div className="flex -space-x-4">
+                  {[1, 2, 3].map(i => (
+                    <div key={i} className="w-10 h-10 rounded-full border-2 border-heritage-bone overflow-hidden bg-heritage-gold/20">
+                      <img src={`https://picsum.photos/seed/lawyer${i}/100/100`} alt="" referrerPolicy="no-referrer" />
+                    </div>
+                  ))}
                 </div>
-                <div>
-                  <h3 className="font-semibold text-sm text-white">{item.title}</h3>
-                  <p className="text-xs text-slate-400 leading-relaxed">{item.desc}</p>
+                <div className="text-left">
+                  <p className="text-[10px] font-black uppercase text-heritage-ink/40">Kepercayaan</p>
+                  <p className="text-xs font-bold text-heritage-ink">500+ Praktisi Hukum</p>
                 </div>
               </div>
-            ))}
-          </div>
+            </div>
+          </motion.div>
 
-          <button 
-            onClick={handleLogin}
-            className="w-full bg-blue-600 text-white font-bold py-4 px-6 rounded-2xl hover:bg-blue-500 transition-all flex items-center justify-center gap-3 shadow-lg shadow-blue-600/30 active:scale-95"
-          >
-            <img src="https://www.google.com/favicon.ico" className="w-4 h-4 brightness-0 invert" alt="Google" />
-            MASUK DENGAN GOOGLE
-          </button>
-          
-          <p className="mt-8 text-[9px] text-slate-500 uppercase tracking-widest font-black">Leksia &bull; Ver 4.0 Digital Justice</p>
-        </motion.div>
+          {/* Background Decorative */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full -z-10 opacity-5 pointer-events-none overflow-hidden">
+             <div className="w-[120vw] h-[120vh] bg-[url('https://www.transparenttextures.com/patterns/batik.png')] rotate-12 scale-150"></div>
+          </div>
+        </section>
+
+        {/* Feature Split Section */}
+        <section className="bg-heritage-ink text-heritage-bone py-24 md:py-40">
+          <div className="max-w-7xl mx-auto px-6 md:px-12 grid grid-cols-1 lg:grid-cols-2 gap-20 items-center">
+            <motion.div
+              initial={{ opacity: 0, x: -50 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              className="relative aspect-[4/5] overflow-hidden"
+            >
+              <img 
+                src="https://picsum.photos/seed/jakarta-legal/800/1000" 
+                className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-700" 
+                alt="Indonesian Legal Landscape" 
+                referrerPolicy="no-referrer"
+              />
+              <div className="absolute inset-0 bg-heritage-ink/20"></div>
+              <div className="absolute bottom-10 left-10 p-8 bg-heritage-bone/5 backdrop-blur-xl border border-white/10 max-w-xs">
+                <p className="text-[10px] uppercase tracking-widest font-black text-heritage-gold mb-2">Presisi Data</p>
+                <p className="text-sm font-serif leading-relaxed italic">
+                  "Teknologi bukan pengganti keadilan, melainkan akselerator kepastian hukum."
+                </p>
+              </div>
+            </motion.div>
+            
+            <div className="space-y-16">
+              <div className="space-y-6">
+                <h2 className="text-4xl md:text-5xl font-serif font-bold leading-tight">
+                  Menavigasi Labirin <br/> Regulasi Nusantara.
+                </h2>
+                <div className="w-20 h-1 bg-heritage-gold"></div>
+              </div>
+
+              <div className="space-y-12">
+                {[
+                  { 
+                    num: "01", 
+                    title: "Riset Regulasi Mendalam", 
+                    desc: "Akses ke ribuan Peraturan Perundang-undangan di Indonesia dalam hitungan detik. Cerdas, akurat, dan mutakhir." 
+                  },
+                  { 
+                    num: "02", 
+                    title: "Drafting Dokumen Presisi", 
+                    desc: "Hasilkan draf kontrak, surat gugatan, dan memo hukum dengan standar firma hukum papan atas." 
+                  },
+                  { 
+                    num: "03", 
+                    title: "Analisis Risiko Terintegrasi", 
+                    desc: "Identifikasi celah hukum dan mitigasi risiko operasional melalui algoritma cerdas berbasis data." 
+                  }
+                ].map((item, i) => (
+                  <motion.div 
+                    key={i}
+                    initial={{ opacity: 0, y: 20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: i * 0.1 }}
+                    className="flex gap-8 group cursor-default"
+                  >
+                    <span className="text-2xl font-serif font-black text-heritage-gold/40 group-hover:text-heritage-gold transition-colors">{item.num}</span>
+                    <div className="space-y-2">
+                      <h3 className="text-xl font-bold tracking-tight">{item.title}</h3>
+                      <p className="text-sm text-heritage-bone/50 leading-relaxed font-light">{item.desc}</p>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Bento Grid Gallery / Insights */}
+        <section className="bg-heritage-bone py-24 md:py-40 px-6 md:px-12">
+          <div className="max-w-7xl mx-auto space-y-20">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 border-b border-heritage-ink/10 pb-12">
+              <div className="space-y-4">
+                <p className="text-[10px] uppercase tracking-widest font-black text-heritage-gold">Expertise & Insights</p>
+                <h2 className="text-5xl md:text-6xl font-serif font-bold tracking-tighter">Layanan Unggulan.</h2>
+              </div>
+              <p className="text-sm font-light text-heritage-ink/60 max-w-xs leading-relaxed">
+                Kami menggabungkan pengalaman bertahun-tahun dengan teknologi terkini untuk memberikan solusi hukum yang tak tertandingi.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 md:grid-rows-2 gap-6 h-auto md:h-[800px]">
+              <div className="md:col-span-2 md:row-span-2 bg-heritage-ink p-12 flex flex-col justify-between group overflow-hidden relative">
+                <div className="relative z-10 space-y-6">
+                  <Gavel className="text-heritage-gold w-12 h-12" />
+                  <h3 className="text-3xl font-serif font-bold text-white leading-tight">Litigasi & <br/> Penyelesaian Sengketa.</h3>
+                  <p className="text-sm text-white/40 font-light max-w-xs transition-all group-hover:text-white/80">Strategi pertahanan dan penyerangan di pengadilan yang didukung oleh analisis AI mendalam guna memenangkan kasus Anda.</p>
+                </div>
+                <div className="relative z-10 pt-10">
+                  <button onClick={handleLogin} className="text-[10px] uppercase tracking-[0.2em] font-black text-heritage-gold hover:text-white transition-colors">Lihat Detail &rarr;</button>
+                </div>
+                {/* Background Pattern */}
+                <div className="absolute top-0 right-0 w-64 h-64 bg-heritage-gold/10 blur-[100px] rounded-full translate-x-1/2 -translate-y-1/2 transition-transform group-hover:scale-150 duration-700"></div>
+              </div>
+
+              <div className="md:col-span-2 bg-white border border-heritage-ink/5 p-10 flex flex-col justify-center space-y-4 hover:shadow-2xl transition-all duration-500">
+                <ShieldCheck className="text-heritage-forest w-8 h-8" />
+                <h3 className="text-2xl font-serif font-bold tracking-tight">Kepatuhan & Tata Kelola.</h3>
+                <p className="text-sm text-heritage-ink/50 font-light leading-relaxed">Memastikan setiap lini bisnis Anda beroperasi sesuai dengan hukum yang berlaku di Indonesia.</p>
+              </div>
+
+              <div className="md:col-span-1 bg-heritage-forest p-8 flex flex-col justify-end gap-6 text-white group overflow-hidden relative">
+                <Users className="w-6 h-6 text-heritage-gold mb-auto" />
+                <h3 className="text-lg font-serif font-bold leading-tight relative z-10">Kekayaan <br/> Intelektual.</h3>
+                <div className="absolute bottom-0 right-0 w-full h-1 bg-heritage-gold transform translate-y-full group-hover:translate-y-0 transition-transform"></div>
+              </div>
+
+              <div className="md:col-span-1 bg-heritage-gold p-8 flex flex-col justify-end gap-6 text-heritage-ink group overflow-hidden relative">
+                <Scale className="w-6 h-6 mb-auto" />
+                <h3 className="text-lg font-serif font-bold leading-tight relative z-10">Hukum <br/> Korporasi.</h3>
+                 <div className="absolute inset-0 bg-heritage-ink opacity-0 group-hover:opacity-5 transition-opacity"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Closing CTA Section */}
+        <section className="relative py-40 bg-heritage-ink overflow-hidden">
+          <div className="max-w-4xl mx-auto px-6 text-center space-y-12 relative z-10">
+            <h2 className="text-5xl md:text-7xl font-serif font-bold text-white tracking-tighter leading-[0.9]">
+              Siap Bertransformasi <br/> di Era Ekonomi Digital bersama Lexsia.ai?
+            </h2>
+            <p className="text-lg text-white/40 font-light max-w-xl mx-auto leading-relaxed">
+              Bergabunglah dengan ratusan firma hukum dan korporasi yang telah meningkatkan efisiensi mereka bersama Lexsia.ai.
+            </p>
+            <motion.button 
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={handleLogin}
+              className="px-12 py-6 bg-heritage-gold text-heritage-ink font-black text-xs uppercase tracking-widest hover:bg-white transition-all shadow-2xl shadow-heritage-gold/20"
+            >
+              Mulai Uji Coba Gratis
+            </motion.button>
+          </div>
+          {/* Subtle noise/texture overlay */}
+          <div className="absolute inset-0 opacity-10 pointer-events-none mask-fade-to-b bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]"></div>
+        </section>
+
+        {/* Footer */}
+        <footer className="bg-heritage-bone py-20 px-6 md:px-12 border-t border-heritage-ink/5">
+          <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start gap-12">
+            <div className="space-y-6">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-heritage-ink flex items-center justify-center p-1.5">
+                  <Scale className="text-heritage-gold w-full h-full" />
+                </div>
+                <span className="font-serif font-bold text-lg tracking-tight">Lexsia.ai</span>
+              </div>
+              <p className="text-[10px] text-heritage-ink/40 uppercase tracking-[0.2em] font-black leading-loose">
+                Graha Lexsia, Lantai 12 <br/>
+                Kawasan Mega Kuningan, Jakarta Selatan <br/>
+                DKI Jakarta 12950, Indonesia
+              </p>
+            </div>
+            
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-12 sm:gap-24">
+              <div className="space-y-6">
+                <p className="text-[10px] font-black uppercase tracking-widest text-heritage-ink">Platform</p>
+                <ul className="space-y-3 text-xs text-heritage-ink/50 font-medium">
+                  <li className="hover:text-heritage-gold cursor-pointer transition-colors">Fitur Utama</li>
+                  <li className="hover:text-heritage-gold cursor-pointer transition-colors">Keamanan Data</li>
+                  <li className="hover:text-heritage-gold cursor-pointer transition-colors">Pusat Bantuan</li>
+                </ul>
+              </div>
+              <div className="space-y-6">
+                <p className="text-[10px] font-black uppercase tracking-widest text-heritage-ink">Halaman Utama</p>
+                <ul className="space-y-3 text-xs text-heritage-ink/50 font-medium">
+                  <li className="hover:text-heritage-gold cursor-pointer transition-colors">Tentang Kami</li>
+                  <li className="hover:text-heritage-gold cursor-pointer transition-colors">Karier</li>
+                  <li className="hover:text-heritage-gold cursor-pointer transition-colors">Kontak</li>
+                </ul>
+              </div>
+              <div className="space-y-6 col-span-2 sm:col-span-1">
+                <p className="text-[10px] font-black uppercase tracking-widest text-heritage-ink">Legalitas</p>
+                <ul className="space-y-3 text-xs text-heritage-ink/50 font-medium">
+                  <li className="hover:text-heritage-gold cursor-pointer transition-colors">Syarat & Ketentuan</li>
+                  <li className="hover:text-heritage-gold cursor-pointer transition-colors">Kebijakan Privasi</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <div className="max-w-7xl mx-auto mt-20 pt-10 border-t border-heritage-ink/5 flex flex-col sm:flex-row justify-between items-center gap-6">
+            <p className="text-[9px] font-black text-heritage-ink/30 uppercase tracking-[0.3em]">&copy; 2026 Lexsia.ai &bull; Digital Justice Indonesia</p>
+            <div className="flex gap-6">
+               <Globe className="w-4 h-4 text-heritage-ink/20 hover:text-heritage-gold transition-colors cursor-pointer" />
+               <ShieldCheck className="w-4 h-4 text-heritage-ink/20 hover:text-heritage-gold transition-colors cursor-pointer" />
+            </div>
+          </div>
+        </footer>
       </div>
     );
   }
 
   return (
-    <div className="h-screen w-screen flex mesh-gradient overflow-hidden relative">
-      <div className="absolute inset-0 bg-slate-950/20 pointer-events-none z-0"></div>
+    <div className="h-screen w-screen flex bg-heritage-bone overflow-hidden relative">
+      <div className="absolute inset-0 bg-heritage-ink/5 pointer-events-none z-0"></div>
       
       {/* Sidebar */}
       <AnimatePresence>
@@ -1085,18 +1363,18 @@ export default function App() {
             animate={{ x: 0 }}
             exit={{ x: -300 }}
             transition={{ type: "spring", damping: 25, stiffness: 200 }}
-            className="w-72 h-full bg-slate-900/40 backdrop-blur-3xl flex flex-col shrink-0 z-20 border-r border-white/5 relative"
+            className="w-72 h-full bg-heritage-ink flex flex-col shrink-0 z-20 border-r border-white/5 relative"
           >
             <div className="p-8 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-400 flex items-center justify-center shadow-lg shadow-blue-500/20">
-                  <Scale className="text-white w-6 h-6" />
+                <div className="w-10 h-10 bg-heritage-ink flex items-center justify-center border border-heritage-gold/30">
+                  <Scale className="text-heritage-gold w-6 h-6" />
                 </div>
-                <h1 className="text-xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">Leksia.AI</h1>
+                <h1 className="text-xl font-serif font-bold tracking-tight text-white">Lexsia.ai</h1>
               </div>
               <button 
                 onClick={() => setSidebarOpen(false)}
-                className="lg:hidden p-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-all"
+                className="lg:hidden p-2 text-white/40 hover:text-white hover:bg-white/5 rounded-lg transition-all"
               >
                 <ChevronLeft className="w-5 h-5" />
               </button>
@@ -1109,24 +1387,24 @@ export default function App() {
                   e.preventDefault();
                   startNewChat();
                 }}
-                className="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-xl hover:bg-blue-500 transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 active:scale-95 text-xs"
+                className="w-full bg-heritage-gold text-heritage-ink font-black py-4 px-4 rounded-none hover:bg-white transition-all flex items-center justify-center gap-2 shadow-xl active:scale-95 text-[10px] uppercase tracking-widest"
               >
                 <Plus className="w-4 h-4" />
-                KONSULTASI BARU
+                Konsultasi Baru
               </button>
             </div>
 
             <div className="flex-1 overflow-y-auto px-4 space-y-1 custom-scrollbar">
               <div className="px-3 mb-4 flex items-center justify-between">
-                <p className="text-[10px] uppercase tracking-[0.2em] font-black text-slate-500">Arsip Hukum</p>
+                <p className="text-[10px] uppercase tracking-[0.2em] font-black text-white/30">Arsip Hukum</p>
                 {chats.length > 0 && (
                   <button 
                     onClick={handleDeleteAllChats}
-                    className="text-[9px] font-black text-slate-600 hover:text-red-400 uppercase tracking-widest transition-colors flex items-center gap-1"
+                    className="text-[9px] font-black text-white/40 hover:text-red-400 uppercase tracking-widest transition-colors flex items-center gap-1"
                     title="Hapus Semua Riwayat"
                   >
                     <Trash2 className="w-3 h-3" />
-                    Hapus Semua
+                    Reset
                   </button>
                 )}
               </div>
@@ -1138,25 +1416,25 @@ export default function App() {
                     if (window.innerWidth < 1024) setSidebarOpen(false);
                   }}
                   className={cn(
-                    "w-full group relative flex items-center gap-3 px-4 py-3 rounded-xl cursor-pointer transition-all border text-left",
+                    "w-full group relative flex items-center gap-3 px-4 py-3 cursor-pointer transition-all border text-left",
                     activeChat === chat.id 
-                      ? "bg-white/10 text-white border-white/10 shadow-lg backdrop-blur-md" 
-                      : "hover:bg-white/5 text-slate-400 border-transparent hover:border-white/5"
+                      ? "bg-white/10 text-white border-heritage-gold/20" 
+                      : "hover:bg-white/5 text-white/40 border-transparent hover:border-white/5"
                   )}
                 >
-                  <MessageSquare className={cn("w-4 h-4 shrink-0", activeChat === chat.id ? "text-blue-400" : "text-slate-600")} />
+                  <MessageSquare className={cn("w-4 h-4 shrink-0", activeChat === chat.id ? "text-heritage-gold" : "text-white/20")} />
                   <div className="flex-1 overflow-hidden">
                     <p className="text-xs font-semibold truncate">{chat.title}</p>
-                    <p className="text-[10px] text-slate-500 font-medium truncate">{chat.lastMessage || 'Belum ada analisis'}</p>
+                    <p className="text-[10px] text-white/30 font-medium truncate">{chat.lastMessage || 'Belum ada analisis'}</p>
                   </div>
                   <button 
                     type="button"
                     onClick={(e) => handleDeleteChat(chat.id, e)}
                     className={cn(
-                      "p-2 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all z-50 pointer-events-auto shrink-0",
+                      "p-2 text-white/20 hover:text-red-400 hover:bg-red-500/10 rounded-none transition-all z-50 pointer-events-auto shrink-0",
                       activeChat === chat.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"
                     )}
-                    title="Hapus Percakapan"
+                    title="Hapus"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -1165,15 +1443,15 @@ export default function App() {
             </div>
 
             <div className="p-6">
-              <div className="flex items-center gap-4 p-4 rounded-2xl bg-white/5 border border-white/5 backdrop-blur-md">
-                <img src={user.photoURL || ''} className="w-10 h-10 rounded-full border border-white/10 ring-2 ring-white/5 shadow-inner" alt="" />
+              <div className="flex items-center gap-4 p-4 bg-heritage-bone/5 border border-white/5">
+                <img src={user.photoURL || ''} className="w-10 h-10 rounded-none border border-heritage-gold/30" alt="" />
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-bold text-white truncate">{user.displayName}</p>
-                  <p className="text-[9px] text-blue-400 uppercase tracking-widest font-black">Pro Member</p>
+                  <p className="text-[9px] text-heritage-gold uppercase tracking-widest font-black">Pro Member</p>
                 </div>
                 <button 
                   onClick={handleLogout}
-                  className="p-2 text-slate-500 hover:text-red-400 hover:bg-white/10 rounded-xl transition-all"
+                  className="p-2 text-white/20 hover:text-red-400 hover:bg-white/10 rounded-none transition-all"
                 >
                   <LogOut className="w-4 h-4" />
                 </button>
@@ -1186,31 +1464,31 @@ export default function App() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col relative min-w-0 z-10 h-full overflow-hidden">
         {/* Header */}
-            <header className="h-20 flex items-center justify-between px-8 bg-slate-900/40 backdrop-blur-3xl border-b border-white/5 shrink-0 print:hidden">
+            <header className="h-20 flex items-center justify-between px-8 bg-heritage-bone/80 backdrop-blur-md border-b border-heritage-ink/5 shrink-0 print:hidden">
           <div className="flex items-center gap-6">
             <button 
               onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="p-2.5 bg-white/5 rounded-xl border border-white/10 hover:bg-white/10 transition-colors"
+              className="p-2.5 bg-heritage-ink text-white hover:bg-heritage-gold transition-colors"
             >
-              {sidebarOpen ? <ChevronLeft className="w-5 h-5 text-white" /> : <ChevronRight className="w-5 h-5 text-white" />}
+              {sidebarOpen ? <ChevronLeft className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
             </button>
             <div className="flex items-center gap-4">
               {lawFirmProfile.logo && (
-                <div className="w-10 h-10 rounded-lg bg-white/5 p-1 flex items-center justify-center overflow-hidden border border-white/10">
+                <div className="w-10 h-10 bg-white p-1 flex items-center justify-center overflow-hidden border border-heritage-ink/5">
                   <img src={lawFirmProfile.logo} className="w-full h-full object-contain" alt="Firm Logo" />
                 </div>
               )}
               <div>
-                <h2 className="font-bold text-base text-white tracking-tight">
+                <h2 className="font-serif font-bold text-lg text-heritage-ink tracking-tight">
                   {activeChat ? chats.find(c => c.id === activeChat)?.title : 'Dashboard Hukum Indonesia'}
                 </h2>
                 <div className="flex items-center gap-2 mt-1">
                   <div className={cn(
                     "w-1.5 h-1.5 rounded-full transition-all duration-500",
-                    agentMode ? "bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)] animate-pulse" : "bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+                    agentMode ? "bg-heritage-gold animate-pulse" : "bg-heritage-ink/20"
                   )}></div>
-                  <p className="text-[10px] text-slate-500 uppercase tracking-widest font-black">
-                    {agentMode ? "Leksia Agent Mode" : "Leksia v4.0 AI-Sync"}
+                  <p className="text-[10px] text-heritage-ink/40 uppercase tracking-widest font-black">
+                    {agentMode ? "Agent Active" : "Legal Intelligence"}
                   </p>
                 </div>
               </div>
@@ -1222,33 +1500,33 @@ export default function App() {
                 <button 
                   onClick={() => setIsSplitView(!isSplitView)}
                   className={cn(
-                    "px-5 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 border",
-                    isSplitView ? "bg-blue-600/10 border-blue-500/30 text-blue-400" : "bg-white/5 border-white/5 text-slate-300 hover:bg-white/10 shadow-none"
+                    "px-5 py-2 text-xs font-black uppercase tracking-widest transition-all active:scale-95 border",
+                    isSplitView ? "bg-heritage-gold text-heritage-ink border-heritage-gold" : "bg-heritage-ink text-white border-heritage-ink hover:bg-heritage-gold hover:text-heritage-ink"
                   )}
                 >
-                  {isSplitView ? "SIDE-BY-SIDE ON" : "VIEW EDITOR"}
+                  {isSplitView ? "Standard" : "Split View"}
                 </button>
                 <button 
                   onClick={() => {
                     setAgentMode(!agentMode);
-                    setError(agentMode ? "Mode Standar Aktif." : "Agent Mode Aktif. Leksia siap melakukan riset hukum mendalam.");
+                    setError(agentMode ? "Mode Standar Aktif." : "Agent Mode Aktif. Lexsia siap melakukan riset hukum mendalam.");
                     setTimeout(() => setError(null), 3000);
                   }}
                   className={cn(
-                    "px-5 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 flex items-center gap-2",
+                    "px-5 py-2 text-xs font-black uppercase tracking-widest transition-all active:scale-95 flex items-center gap-2",
                     agentMode 
-                      ? "bg-green-600 text-white shadow-lg shadow-green-600/30" 
-                      : "bg-blue-600 text-white shadow-lg shadow-blue-600/30 hover:bg-blue-500"
+                      ? "bg-blue-600 text-white shadow-[0_0_20px_rgba(37,99,235,0.4)] border-blue-400" 
+                      : "bg-heritage-ink text-white hover:bg-heritage-gold hover:text-heritage-ink border-heritage-ink"
                   )}
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  {agentMode ? "AGEN AKTIF" : "AGEN LANJUT"}
+                  <Sparkles className={cn("w-3.5 h-3.5", agentMode ? "animate-pulse" : "")} />
+                  {agentMode ? "Agen Aktif" : "Mode Agen"}
                 </button>
              </div>
-             <div className="h-8 w-px bg-white/5 mx-2"></div>
+             <div className="h-8 w-px bg-heritage-ink/10 mx-2"></div>
              <button 
                onClick={() => setShowSettings(true)}
-               className="p-2.5 bg-white/5 rounded-xl border border-white/10 text-slate-400 hover:text-white transition-all active:rotate-90"
+               className="p-2.5 bg-heritage-bone border border-heritage-ink/5 text-heritage-ink/60 hover:text-heritage-ink hover:border-heritage-ink transition-all active:rotate-90"
              >
                 <Settings className="w-5 h-5" />
              </button>
@@ -1345,126 +1623,76 @@ export default function App() {
                 <motion.div 
                   initial={{ scale: 0.95, opacity: 0, y: 20 }}
                   animate={{ scale: 1, opacity: 1, y: 0 }}
-                  className="bg-slate-900 border border-white/10 rounded-none sm:rounded-[2.5rem] w-full max-w-5xl h-full sm:h-auto sm:max-h-[85vh] shadow-2xl relative overflow-hidden flex flex-col sm:flex-row"
+                  className="bg-heritage-bone border border-heritage-ink/5 rounded-none w-full max-w-5xl h-full sm:h-auto sm:max-h-[85vh] shadow-2xl relative overflow-hidden flex flex-col sm:flex-row"
                   onClick={e => e.stopPropagation()}
                 >
                   {/* Close button for mobile */}
                   <button 
                     onClick={() => setShowSettings(false)} 
-                    className="absolute top-6 right-6 z-50 p-2 bg-white/5 rounded-full text-slate-400 hover:text-white transition-colors sm:hidden"
+                    className="absolute top-6 right-6 z-50 p-2 bg-heritage-ink rounded-full text-white hover:bg-heritage-gold transition-colors sm:hidden"
                   >
                     <X className="w-6 h-6" />
                   </button>
 
                   {/* Settings Sidebar */}
-                  <div className="w-full sm:w-72 bg-slate-950/50 border-r border-white/5 p-8 shrink-0">
+                  <div className="w-full sm:w-72 bg-heritage-ink border-r border-white/5 p-8 shrink-0 flex flex-col">
                     <div className="flex items-center gap-3 mb-12">
-                      <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-600/20">
-                        <Settings className="w-5 h-5 text-white" />
+                      <div className="w-10 h-10 bg-heritage-ink flex items-center justify-center border border-heritage-gold/30">
+                        <Settings className="w-5 h-5 text-heritage-gold" />
                       </div>
-                      <h2 className="text-xl font-bold text-white tracking-tight">Pengaturan</h2>
+                      <h2 className="text-xl font-serif font-bold text-white tracking-tight">Pengaturan</h2>
                     </div>
 
                     <nav className="flex sm:flex-col gap-2 overflow-x-auto sm:overflow-x-visible no-scrollbar">
-                      <button 
-                        onClick={() => setSettingsTab('account')}
-                        className={cn(
-                          "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all whitespace-nowrap",
-                          settingsTab === 'account' 
-                            ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20" 
-                            : "text-slate-400 hover:bg-white/5 hover:text-white"
-                        )}
-                      >
-                        <UserIcon className="w-4 h-4" />
-                        Akun & Profil
-                      </button>
-                      <button 
-                        onClick={() => setSettingsTab('profile')}
-                        className={cn(
-                          "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all whitespace-nowrap",
-                          settingsTab === 'profile' 
-                            ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20" 
-                            : "text-slate-400 hover:bg-white/5 hover:text-white"
-                        )}
-                      >
-                        <Building2 className="w-4 h-4" />
-                        Tuning Profil
-                      </button>
-                      <button 
-                        onClick={() => setSettingsTab('legalcenter')}
-                        className={cn(
-                          "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all whitespace-nowrap",
-                          settingsTab === 'legalcenter' 
-                            ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20" 
-                            : "text-slate-400 hover:bg-white/5 hover:text-white"
-                        )}
-                      >
-                        <Library className="w-4 h-4" />
-                        Pusat Hukum
-                      </button>
-                      <button 
-                        onClick={() => setSettingsTab('ai')}
-                        className={cn(
-                          "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all whitespace-nowrap",
-                          settingsTab === 'ai' 
-                            ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20" 
-                            : "text-slate-400 hover:bg-white/5 hover:text-white"
-                        )}
-                      >
-                        <Sparkles className="w-4 h-4" />
-                        Tuning AI
-                      </button>
-                      <button 
-                        onClick={() => setSettingsTab('integrations')}
-                        className={cn(
-                          "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all whitespace-nowrap",
-                          settingsTab === 'integrations' 
-                            ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20" 
-                            : "text-slate-400 hover:bg-white/5 hover:text-white"
-                        )}
-                      >
-                        <LinkIcon className="w-4 h-4" />
-                        Connections
-                      </button>
-                      <button 
-                        onClick={() => setSettingsTab('datacenter')}
-                        className={cn(
-                          "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all whitespace-nowrap",
-                          settingsTab === 'datacenter' 
-                            ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20" 
-                            : "text-slate-400 hover:bg-white/5 hover:text-white"
-                        )}
-                      >
-                        <Database className="w-4 h-4" />
-                        Data Center
-                      </button>
+                      {[
+                        { id: 'account', label: 'Profil & Akun', icon: UserIcon },
+                        { id: 'profile', label: 'Profil Kantor', icon: Building2 },
+                        { id: 'legalcenter', label: 'Pusat Hukum', icon: Library },
+                        { id: 'ai', label: 'Tuning AI', icon: Sparkles },
+                        { id: 'integrations', label: 'Koneksi', icon: LinkIcon },
+                        { id: 'datacenter', label: 'Keamanan', icon: Database },
+                      ].map((tab) => (
+                        <button 
+                          key={tab.id}
+                          onClick={() => setSettingsTab(tab.id as any)}
+                          className={cn(
+                            "flex items-center gap-3 px-4 py-3 rounded-none text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap",
+                            settingsTab === tab.id 
+                              ? "bg-heritage-gold text-heritage-ink shadow-lg" 
+                              : "text-white/40 hover:bg-white/5 hover:text-white"
+                          )}
+                        >
+                          <tab.icon className="w-4 h-4" />
+                          {tab.label}
+                        </button>
+                      ))}
                     </nav>
 
                     <div className="mt-auto hidden sm:block pt-8">
                        <button 
                         onClick={() => auth.signOut()}
-                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-red-400 hover:bg-red-500/10 transition-all uppercase tracking-widest"
+                        className="w-full flex items-center gap-3 px-4 py-3 rounded-none text-[10px] font-black text-red-400 hover:bg-red-500/10 transition-all uppercase tracking-widest"
                       >
                         <LogOut className="w-4 h-4" />
-                        Logout
+                        Keluar
                       </button>
                     </div>
                   </div>
 
                   {/* Settings Content Area */}
-                  <div className="flex-1 p-8 sm:p-12 overflow-y-auto custom-scrollbar">
+                  <div className="flex-1 p-8 sm:p-12 overflow-y-auto custom-scrollbar text-heritage-ink">
                     <div className="flex items-center justify-between mb-10">
-                       <h3 className="text-2xl font-bold text-white">
-                         {settingsTab === 'account' ? 'Pengaturan Akun' : 
-                          settingsTab === 'ai' ? 'Customize & Tuning AI' : 
-                          settingsTab === 'profile' ? 'Tuning Profil Kantor Hukum' :
-                          settingsTab === 'datacenter' ? 'Data Center & Keamanan' :
-                          settingsTab === 'legalcenter' ? 'Pusat Hukum & Arsip' :
-                          'Koneksi & Integrasi Google'}
+                       <h3 className="text-3xl font-serif font-bold text-heritage-ink">
+                         {settingsTab === 'account' ? 'Profil Pengguna' : 
+                          settingsTab === 'ai' ? 'Optimasi Kecerdasan' : 
+                          settingsTab === 'profile' ? 'Identitas Kantor Hukum' :
+                          settingsTab === 'datacenter' ? 'Keamanan & Kepatuhan' :
+                          settingsTab === 'legalcenter' ? 'Pusat Data Hukum' :
+                          'Integrasi Layanan'}
                        </h3>
                        <button 
                         onClick={() => setShowSettings(false)} 
-                        className="hidden sm:flex p-2 bg-white/5 rounded-full text-slate-400 hover:text-white transition-colors"
+                        className="hidden sm:flex p-2 bg-heritage-ink rounded-full text-white hover:bg-heritage-gold transition-colors"
                       >
                         <X className="w-5 h-5" />
                       </button>
@@ -1479,23 +1707,23 @@ export default function App() {
                           exit={{ opacity: 0, x: -10 }}
                           className="space-y-8"
                         >
-                          <div className="p-8 rounded-[2rem] bg-indigo-600/5 border border-indigo-500/10 flex gap-6 items-start">
-                             <div className="w-16 h-16 rounded-2xl bg-indigo-600/20 flex items-center justify-center shrink-0">
-                                <Library className="w-8 h-8 text-indigo-400" />
+                          <div className="p-8 rounded-none bg-heritage-ink/5 border border-heritage-ink/10 flex gap-6 items-start">
+                             <div className="w-16 h-16 rounded-none bg-heritage-ink flex items-center justify-center shrink-0 border border-heritage-gold/30">
+                                <Library className="w-8 h-8 text-heritage-gold" />
                              </div>
                              <div>
-                                <h4 className="text-lg font-bold text-white mb-2">Pusat Hukum & Digital Library</h4>
-                                <p className="text-sm text-slate-400 leading-relaxed">
-                                   Unggah dokumen hukum Anda (PDF, DOCX, Putusan) dari komputer lokal untuk dianalisis oleh AI dan disimpan secara otomatis ke Google Drive Anda.
+                                <h4 className="text-xl font-serif font-bold text-heritage-ink mb-1">Pusat Hukum & Digital Library</h4>
+                                <p className="text-xs font-medium text-heritage-ink/60 leading-relaxed">
+                                   Unggah dokumen hukum Anda (PDF, DOCX, Putusan) untuk dianalisis oleh AI dan disimpan ke Google Drive.
                                 </p>
                              </div>
                           </div>
 
                           <div className="relative group">
-                             <div className="w-full h-48 rounded-[2rem] bg-white/5 border-2 border-dashed border-white/10 flex flex-col items-center justify-center transition-all group-hover:border-blue-500/50 group-hover:bg-white/10">
-                                <CloudUpload className="w-10 h-10 text-slate-500 mb-3 group-hover:text-blue-500 transition-colors" />
-                                <p className="text-sm font-bold text-white mb-1">Klik atau seret file ke sini</p>
-                                <p className="text-[10px] text-slate-500 uppercase tracking-widest font-black">Maksimum 50MB • PDF, DOCX, TXT</p>
+                             <div className="w-full h-48 rounded-none bg-heritage-ink/5 border-2 border-dashed border-heritage-ink/10 flex flex-col items-center justify-center transition-all group-hover:border-heritage-gold group-hover:bg-heritage-bone">
+                                <CloudUpload className="w-10 h-10 text-heritage-ink/20 mb-3 group-hover:text-heritage-gold transition-colors" />
+                                <p className="text-[10px] font-black text-heritage-ink/60 mb-1 uppercase tracking-widest">Klik atau seret file ke sini</p>
+                                <p className="text-[8px] text-heritage-ink/40 uppercase tracking-[0.2em] font-bold">Maksimum 50MB • PDF, DOCX, TXT</p>
                              </div>
                              <input 
                                type="file" 
@@ -1504,40 +1732,37 @@ export default function App() {
                                onChange={(e) => {
                                  const files = e.target.files;
                                  if (files && files.length > 0) {
-                                   setToast({ message: `Mengunggah ${files.length} dokumen ke Google Drive...`, type: 'info' });
-                                   setTimeout(() => {
-                                      setToast({ message: "Berhasil diunggah dan disimpan ke Drive!", type: 'success' });
-                                      setTimeout(() => setToast(null), 3000);
-                                   }, 2000);
+                                   handleAutoUpload(files);
                                  }
                                }}
                              />
                           </div>
 
                           <div className="space-y-4">
-                             <h5 className="text-[10px] uppercase tracking-widest font-black text-slate-500 block">Riwayat Unggahan Terkini</h5>
+                             <h5 className="text-[10px] uppercase tracking-widest font-black text-heritage-ink/40 block">Riwayat Unggahan Terkini</h5>
                              <div className="space-y-2">
-                                {[
-                                  { name: 'Putusan_MK_No_90.pdf', size: '2.4 MB', date: 'Hari ini' },
-                                  { name: 'Kontrak_Kerja_Sama.docx', size: '1.1 MB', date: 'Kemarin' },
-                                ].map((doc, i) => (
-                                  <div key={i} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+                                {uploadHistory.map((doc, i) => (
+                                  <div 
+                                    key={doc.id} 
+                                    onClick={() => window.open(doc.url, '_blank')}
+                                    className="flex items-center justify-between p-4 bg-white border border-heritage-ink/5 shadow-sm cursor-pointer hover:border-heritage-gold hover:shadow-md transition-all group/item"
+                                  >
                                      <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 rounded-lg bg-red-500/10 flex items-center justify-center">
+                                        <div className="w-8 h-8 rounded-none bg-red-500/10 flex items-center justify-center group-hover/item:bg-red-500/20 transition-colors">
                                            <FileText className="w-4 h-4 text-red-500" />
                                         </div>
                                         <div>
-                                           <p className="text-xs font-bold text-white">{doc.name}</p>
-                                           <p className="text-[10px] text-slate-500">{doc.size} • {doc.date}</p>
+                                           <p className="text-xs font-bold text-heritage-ink group-hover/item:text-heritage-gold transition-colors">{doc.name}</p>
+                                           <p className="text-[10px] text-heritage-ink/40 font-bold uppercase">{doc.size} • {doc.date}</p>
                                         </div>
                                      </div>
                                      <div className="flex items-center gap-2">
-                                        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-green-500/10 rounded-md border border-green-500/20">
-                                           <CheckCircle className="w-2.5 h-2.5 text-green-500" />
-                                           <span className="text-[8px] font-black text-green-400 uppercase">Saved to Drive</span>
+                                        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-green-500/10 rounded-none border border-green-500/20">
+                                           <CheckCircle className="w-2.5 h-2.5 text-green-600" />
+                                           <span className="text-[8px] font-black text-green-600 uppercase">Saved to Drive</span>
                                         </div>
-                                        <button className="p-2 hover:bg-white/10 rounded-lg text-slate-400 transition-colors">
-                                           <MoreVertical className="w-4 h-4" />
+                                        <button className="p-2 hover:bg-heritage-ink/5 rounded-none text-heritage-ink/20 group-hover/item:text-heritage-gold transition-colors">
+                                           <ExternalLink className="w-4 h-4" />
                                         </button>
                                      </div>
                                   </div>
@@ -1553,53 +1778,53 @@ export default function App() {
                           exit={{ opacity: 0, x: -10 }}
                           className="space-y-10"
                         >
-                          <div className="flex items-start gap-6 p-6 bg-white/5 rounded-[2rem] border border-white/5">
-                             <img src={user.photoURL || ''} className="w-20 h-20 rounded-2xl border-2 border-white/10 shadow-2xl" alt="" />
+                          <div className="flex items-start gap-6 p-6 bg-heritage-ink/5 rounded-none border border-heritage-ink/5">
+                             <img src={user.photoURL || ''} className="w-20 h-20 rounded-none border border-heritage-ink/10 shadow-xl" alt="" />
                              <div className="flex-1">
-                                <h4 className="text-lg font-bold text-white mb-1">{user.displayName}</h4>
-                                <p className="text-sm text-slate-400 mb-4">{user.email}</p>
-                                <span className="inline-flex items-center gap-2 px-3 py-1 bg-blue-600/20 text-blue-400 rounded-full text-[10px] font-black uppercase tracking-widest border border-blue-500/20">
+                                <h4 className="text-xl font-serif font-bold text-heritage-ink mb-1">{user.displayName}</h4>
+                                <p className="text-xs font-medium text-heritage-ink/60 mb-4">{user.email}</p>
+                                <span className="inline-flex items-center gap-2 px-3 py-1 bg-heritage-gold text-heritage-ink rounded-none text-[9px] font-black uppercase tracking-widest">
                                    <ShieldCheck className="w-3 h-3" />
-                                   Leksia Pro Member
+                                   Lexsia Pro Member
                                 </span>
                              </div>
-                             <button className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-xs font-bold text-white transition-all">Edit</button>
+                             <button className="px-5 py-2 bg-heritage-ink text-white hover:bg-heritage-gold hover:text-heritage-ink transition-all text-[10px] font-black uppercase tracking-widest rounded-none">Edit</button>
                           </div>
 
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                             <div>
-                              <label className="text-[10px] uppercase tracking-widest font-black text-slate-500 mb-4 block">Tone Hukum</label>
-                              <div className="grid grid-cols-2 gap-2 p-1 bg-white/5 rounded-2xl border border-white/5">
+                              <label className="text-[10px] uppercase tracking-widest font-black text-heritage-ink/40 mb-4 block">Tone Hukum</label>
+                              <div className="grid grid-cols-2 gap-2 p-1 bg-heritage-ink/5 border border-heritage-ink/5">
                                 {['Formal', 'Praktis'].map((t) => (
                                   <button 
                                     key={t}
                                     onClick={() => setSettings({...settings, legalTone: t.toLowerCase()})}
                                     className={cn(
-                                      "py-3 rounded-xl text-xs font-bold transition-all",
+                                      "py-3 rounded-none text-[10px] font-black uppercase tracking-widest transition-all",
                                       settings.legalTone === t.toLowerCase() 
-                                        ? "bg-blue-600 text-white shadow-lg" 
-                                        : "text-slate-400 hover:text-white"
+                                        ? "bg-heritage-gold text-heritage-ink shadow-lg" 
+                                        : "text-heritage-ink/40 hover:text-heritage-ink"
                                     )}
                                   >
                                     {t}
                                   </button>
                                 ))}
                               </div>
-                              <p className="mt-2 text-[10px] text-slate-500 leading-relaxed">Menyesuaikan gaya bahasa dalam draf dan jawaban AI.</p>
+                              <p className="mt-2 text-[10px] font-medium text-heritage-ink/60 leading-relaxed">Menyesuaikan gaya bahasa dalam draf dan jawaban AI.</p>
                             </div>
 
                             <div>
-                              <label className="text-[10px] uppercase tracking-widest font-black text-slate-500 mb-4 block">Level Analisis</label>
+                              <label className="text-[10px] uppercase tracking-widest font-black text-heritage-ink/40 mb-4 block">Level Analisis</label>
                               <div className="space-y-2">
                                 {['Standar', 'Senior Associate', 'Managing Partner'].map((l) => (
                                   <button 
                                     key={l}
                                     onClick={() => setSettings({...settings, expertLevel: l.toLowerCase()})}
                                     className={cn(
-                                      "w-full flex items-center justify-between p-4 rounded-2xl text-xs font-bold transition-all border",
+                                      "w-full flex items-center justify-between p-4 rounded-none text-[10px] font-black uppercase tracking-widest transition-all border",
                                       settings.expertLevel === l.toLowerCase()
-                                        ? "bg-blue-600/10 border-blue-500/50 text-blue-400 shadow-[inset_0_0_20px_rgba(37,99,235,0.1)]"
-                                        : "bg-white/5 border-white/5 text-slate-400 hover:bg-white/10"
+                                        ? "bg-heritage-gold border-heritage-gold text-heritage-ink"
+                                        : "bg-heritage-bone border-heritage-ink/10 text-heritage-ink/40 hover:bg-white"
                                     )}
                                   >
                                     {l}
@@ -1621,9 +1846,9 @@ export default function App() {
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                              <div className="space-y-6">
                                 <div>
-                                   <label className="text-[10px] uppercase tracking-widest font-black text-slate-500 mb-2 block">Logo Kantor Hukum</label>
+                                   <label className="text-[10px] uppercase tracking-widest font-black text-heritage-ink/40 mb-2 block">Logo Kantor Hukum</label>
                                    <div className="relative group">
-                                      <div className="w-32 h-32 rounded-2xl bg-white/5 border-2 border-dashed border-white/10 flex flex-col items-center justify-center overflow-hidden transition-all group-hover:border-blue-500/50">
+                                      <div className="w-32 h-32 rounded-none bg-heritage-ink/5 border-2 border-dashed border-heritage-ink/10 flex flex-col items-center justify-center overflow-hidden transition-all group-hover:border-heritage-gold">
                                          {lawFirmProfile.logo ? (
                                            <img src={lawFirmProfile.logo} className="w-full h-full object-cover" alt="Logo" />
                                          ) : (
@@ -1647,39 +1872,39 @@ export default function App() {
                                         }}
                                       />
                                    </div>
-                                   <p className="mt-3 text-[10px] text-slate-500">Logo ini akan muncul di header aplikasi dan dokumen yang dihasilkan.</p>
+                                   <p className="mt-3 text-[10px] text-heritage-ink/40 font-bold uppercase tracking-wider">Logo ini akan muncul di header aplikasi dan dokumen yang dihasilkan.</p>
                                 </div>
                              </div>
 
                              <div className="space-y-6">
                                 <div>
-                                   <label className="text-[10px] uppercase tracking-widest font-black text-slate-500 mb-2 block">Nama Kantor Hukum</label>
+                                   <label className="text-[10px] uppercase tracking-widest font-black text-heritage-ink/40 mb-2 block">Nama Kantor Hukum</label>
                                    <input 
                                      type="text"
                                      value={lawFirmProfile.name}
                                      onChange={(e) => setLawFirmProfile({...lawFirmProfile, name: e.target.value})}
-                                     className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-all font-medium"
+                                     className="w-full bg-white border border-heritage-ink/10 rounded-none px-4 py-3 text-xs text-heritage-ink focus:outline-none focus:border-heritage-gold transition-all font-black uppercase tracking-widest"
                                      placeholder="Masukkan nama kantor hukum..."
                                    />
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                    <div>
-                                      <label className="text-[10px] uppercase tracking-widest font-black text-slate-500 mb-2 block">Informasi Kontak</label>
+                                      <label className="text-[10px] uppercase tracking-widest font-black text-heritage-ink/40 mb-2 block">Informasi Kontak</label>
                                       <input 
                                         type="text"
                                         value={lawFirmProfile.contact}
                                         onChange={(e) => setLawFirmProfile({...lawFirmProfile, contact: e.target.value})}
-                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-all font-medium"
+                                        className="w-full bg-white border border-heritage-ink/10 rounded-none px-4 py-3 text-xs text-heritage-ink focus:outline-none focus:border-heritage-gold transition-all font-black uppercase tracking-widest"
                                         placeholder="Telepon, Kodepos..."
                                       />
                                    </div>
                                    <div>
-                                      <label className="text-[10px] uppercase tracking-widest font-black text-slate-500 mb-2 block">Alamat Kantor</label>
+                                      <label className="text-[10px] uppercase tracking-widest font-black text-heritage-ink/40 mb-2 block">Alamat Kantor</label>
                                       <textarea 
                                         rows={1}
                                         value={lawFirmProfile.address}
                                         onChange={(e) => setLawFirmProfile({...lawFirmProfile, address: e.target.value})}
-                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-all font-medium resize-none"
+                                        className="w-full bg-white border border-heritage-ink/10 rounded-none px-4 py-3 text-xs text-heritage-ink focus:outline-none focus:border-heritage-gold transition-all font-black uppercase tracking-widest resize-none"
                                         placeholder="Alamat Lengkap..."
                                       />
                                    </div>
@@ -1695,23 +1920,23 @@ export default function App() {
                           exit={{ opacity: 0, x: -10 }}
                           className="space-y-8"
                         >
-                          <div className="p-8 rounded-[2rem] bg-blue-600/5 border border-blue-500/10 flex gap-6 items-start">
-                             <div className="w-16 h-16 rounded-2xl bg-blue-600/20 flex items-center justify-center shrink-0">
-                                <Database className="w-8 h-8 text-blue-400" />
+                          <div className="p-8 rounded-none bg-heritage-ink/5 border border-heritage-ink/10 flex gap-6 items-start">
+                             <div className="w-16 h-16 rounded-none bg-heritage-ink flex items-center justify-center shrink-0 border border-heritage-gold/30">
+                                <Database className="w-8 h-8 text-heritage-gold" />
                              </div>
                              <div>
-                                <h4 className="text-lg font-bold text-white mb-2">Cloud Storage & Privacy</h4>
-                                <p className="text-sm text-slate-400 leading-relaxed mb-4">
-                                   Data Anda disimpan di server terenkripsi Google Cloud Platform (Regio: asia-southeast1). Leksia tidak memiliki akses langsung ke konten dokumen Anda tanpa izin eksplisit melalui integrasi OAuth.
+                                <h4 className="text-xl font-serif font-bold text-heritage-ink mb-2">Cloud Storage & Privacy</h4>
+                                <p className="text-xs font-medium text-heritage-ink/60 leading-relaxed mb-4">
+                                   Data Anda disimpan di server terenkripsi Google Cloud Platform (Regio: asia-southeast1). Lexsia tidak memiliki akses langsung ke konten dokumen Anda tanpa izin eksplisit melalui integrasi OAuth.
                                 </p>
                                 <div className="flex gap-4">
-                                   <div className="flex items-center gap-2 px-3 py-1 bg-green-500/10 rounded-lg border border-green-500/20">
-                                      <Shield className="w-3 h-3 text-green-500" />
-                                      <span className="text-[9px] font-black text-green-400 uppercase tracking-widest">End-to-End Encrypted</span>
+                                   <div className="flex items-center gap-2 px-3 py-1 bg-heritage-gold/10 rounded-none border border-heritage-gold/20">
+                                      <Shield className="w-3 h-3 text-heritage-gold" />
+                                      <span className="text-[9px] font-black text-heritage-gold uppercase tracking-widest">End-to-End Encrypted</span>
                                    </div>
-                                   <div className="flex items-center gap-2 px-3 py-1 bg-blue-500/10 rounded-lg border border-blue-500/20">
-                                      <Globe className="w-3 h-3 text-blue-500" />
-                                      <span className="text-[9px] font-black text-blue-400 uppercase tracking-widest">GDPR Compliant</span>
+                                   <div className="flex items-center gap-2 px-3 py-1 bg-heritage-ink text-white rounded-none border border-white/10">
+                                      <Globe className="w-3 h-3 text-heritage-gold" />
+                                      <span className="text-[9px] font-black text-white uppercase tracking-widest">GDPR Compliant</span>
                                    </div>
                                 </div>
                              </div>
@@ -1723,16 +1948,16 @@ export default function App() {
                                { label: 'Uptime', value: '99.9%', icon: CheckCircle },
                                { label: 'Last Backup', value: 'Today, 04:20 AM', icon: History }
                              ].map((stat, i) => (
-                               <div key={i} className="p-5 rounded-2xl bg-white/5 border border-white/5">
-                                  <stat.icon className="w-5 h-5 text-slate-500 mb-3" />
-                                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">{stat.label}</p>
-                                  <p className="text-sm font-bold text-white">{stat.value}</p>
+                               <div key={i} className="p-5 rounded-none bg-heritage-ink/5 border border-heritage-ink/5">
+                                  <stat.icon className="w-5 h-5 text-heritage-ink/40 mb-3" />
+                                  <p className="text-[9px] font-black text-heritage-ink/40 uppercase tracking-widest mb-1">{stat.label}</p>
+                                  <p className="text-xs font-bold text-heritage-ink">{stat.value}</p>
                                </div>
                              ))}
                           </div>
 
-                          <div className="pt-6 border-t border-white/5">
-                             <button className="flex items-center gap-2 text-[10px] font-black text-blue-500 uppercase tracking-widest hover:text-blue-400 transition-colors">
+                          <div className="pt-6 border-t border-heritage-ink/10">
+                             <button className="flex items-center gap-2 text-[10px] font-black text-heritage-gold uppercase tracking-widest hover:text-heritage-ink transition-colors">
                                 <RotateCcw className="w-3 h-3" />
                                 Periksa Pembaruan Sistem
                              </button>
@@ -1750,8 +1975,8 @@ export default function App() {
                             <div className="space-y-8">
                                <div>
                                   <label className="flex items-center justify-between mb-4">
-                                    <span className="text-[10px] uppercase tracking-widest font-black text-slate-500">AI Temperature</span>
-                                    <span className="text-xs font-bold text-blue-500">{settings.aiTemperature}</span>
+                                    <span className="text-[10px] uppercase tracking-widest font-black text-heritage-ink/40">AI Temperature</span>
+                                    <span className="text-xs font-black text-heritage-gold">{settings.aiTemperature}</span>
                                   </label>
                                   <input 
                                     type="range" 
@@ -1760,7 +1985,7 @@ export default function App() {
                                     step="0.1" 
                                     value={settings.aiTemperature}
                                     onChange={(e) => setSettings({...settings, aiTemperature: parseFloat(e.target.value)})}
-                                    className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                                    className="w-full h-1 bg-heritage-ink/10 appearance-none cursor-pointer accent-heritage-gold"
                                   />
                                   <div className="flex justify-between mt-2">
                                      <span className="text-[9px] text-slate-600 font-bold uppercase">Konservatif</span>
@@ -1769,17 +1994,17 @@ export default function App() {
                                </div>
 
                                <div>
-                                  <label className="text-[10px] uppercase tracking-widest font-black text-slate-500 mb-4 block">Creativity Mode</label>
+                                  <label className="text-[10px] uppercase tracking-widest font-black text-heritage-ink/40 mb-4 block">Creativity Mode</label>
                                   <div className="grid grid-cols-3 gap-2">
                                     {['Strict', 'Balanced', 'Deep'].map((m) => (
                                       <button 
                                         key={m}
                                         onClick={() => setSettings({...settings, aiCreativity: m.toLowerCase()})}
                                         className={cn(
-                                          "py-3 rounded-xl text-[10px] font-bold transition-all border",
+                                          "py-3 rounded-none text-[10px] font-black tracking-widest uppercase transition-all border",
                                           settings.aiCreativity === m.toLowerCase()
-                                            ? "bg-blue-600 border-blue-500 text-white shadow-lg"
-                                            : "bg-white/5 border-white/10 text-slate-400 hover:border-white/20"
+                                            ? "bg-heritage-gold border-heritage-gold text-heritage-ink shadow-sm"
+                                            : "bg-heritage-bone border-heritage-ink/10 text-heritage-ink/40 hover:bg-white"
                                         )}
                                       >
                                         {m}
@@ -1791,7 +2016,7 @@ export default function App() {
 
                             <div className="space-y-8">
                                <div>
-                                  <label className="text-[10px] uppercase tracking-widest font-black text-slate-500 mb-4 block">AI Persona</label>
+                                  <label className="text-[10px] uppercase tracking-widest font-black text-heritage-ink/40 mb-4 block">AI Persona</label>
                                   <div className="space-y-3">
                                      {[
                                        { id: 'professional', label: 'Professional Legal', icon: Scale },
@@ -1802,15 +2027,15 @@ export default function App() {
                                           key={p.id}
                                           onClick={() => setSettings({...settings, aiPersona: p.id})}
                                           className={cn(
-                                            "w-full flex items-center gap-4 p-4 rounded-2xl text-xs font-bold transition-all border",
+                                            "w-full flex items-center gap-4 p-4 rounded-none text-[10px] font-black tracking-widest uppercase transition-all border",
                                             settings.aiPersona === p.id
-                                              ? "bg-indigo-600/10 border-indigo-500/50 text-indigo-400"
-                                              : "bg-white/5 border-white/5 text-slate-400 hover:bg-white/10"
+                                              ? "bg-heritage-gold border-heritage-gold text-heritage-ink"
+                                              : "bg-heritage-bone border-heritage-ink/10 text-heritage-ink/40 hover:bg-white"
                                           )}
                                        >
                                           <div className={cn(
-                                            "w-8 h-8 rounded-lg flex items-center justify-center",
-                                            settings.aiPersona === p.id ? "bg-indigo-600/20" : "bg-white/5"
+                                            "w-8 h-8 rounded-none flex items-center justify-center",
+                                            settings.aiPersona === p.id ? "bg-heritage-ink/20" : "bg-heritage-ink/5"
                                           )}>
                                              <p.icon className="w-4 h-4" />
                                           </div>
@@ -1822,26 +2047,26 @@ export default function App() {
                             </div>
                           </div>
 
-                          <div className="p-6 rounded-[2rem] bg-blue-600/5 border border-blue-500/10">
+                          <div className="p-8 rounded-none bg-heritage-ink text-white border border-heritage-gold/20">
                              <div className="flex items-center gap-4 mb-3">
-                                <Sparkles className="w-5 h-5 text-blue-500 animate-pulse" />
-                                <h4 className="text-sm font-bold text-white uppercase tracking-tight">Eksperimental: Neural Drafting</h4>
+                                <Sparkles className="w-5 h-5 text-heritage-gold animate-pulse" />
+                                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-heritage-gold">Eksperimental: Neural Drafting</h4>
                              </div>
                              <p className="text-xs text-slate-400 leading-relaxed">
                                Mengaktifkan mode draf neural akan meningkatkan kedalaman analisis yurisprudensi namun memerlukan waktu proses 2x lebih lama.
                              </p>
                              <div className="mt-4 flex items-center justify-between">
-                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Aktifkan Neural Drafting</span>
+                                <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Aktifkan Neural Drafting</span>
                                 <button 
                                   onClick={() => setSettings({...settings, neuralDrafting: !settings.neuralDrafting})}
                                   className={cn(
-                                    "w-10 h-5 rounded-full relative transition-all duration-300",
-                                    settings.neuralDrafting ? "bg-blue-600" : "bg-slate-800"
+                                    "w-12 h-6 rounded-none relative transition-all duration-300",
+                                    settings.neuralDrafting ? "bg-heritage-gold" : "bg-white/10"
                                   )}
                                 >
                                    <div className={cn(
-                                     "absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all duration-300",
-                                     settings.neuralDrafting ? "left-5.5" : "left-0.5"
+                                     "absolute top-1 w-4 h-4 bg-white transition-all duration-300",
+                                     settings.neuralDrafting ? "left-7" : "left-1"
                                    )}></div>
                                 </button>
                              </div>
@@ -1856,7 +2081,7 @@ export default function App() {
                           className="space-y-6"
                         >
                           <p className="text-sm text-slate-400 mb-8 leading-relaxed">
-                            Hubungkan Leksia ke ekosistem Google Anda untuk sinkronisasi dokumen, jadwal sidang, dan analisis data hukum secara real-time.
+                            Hubungkan Lexsia ke ekosistem Google Anda untuk sinkronisasi dokumen, jadwal sidang, dan analisis data hukum secara real-time.
                           </p>
 
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1870,9 +2095,9 @@ export default function App() {
                              ].map((item) => (
                                <div 
                                  key={item.id}
-                                 className="flex items-center gap-4 p-5 bg-white/5 rounded-[1.5rem] border border-white/5 hover:bg-white/10 transition-all group"
+                                 className="flex items-center gap-4 p-5 bg-heritage-bone rounded-none border border-heritage-ink/10 hover:bg-white transition-all group"
                                >
-                                  <div className="w-12 h-12 rounded-xl bg-slate-800 flex items-center justify-center border border-white/10 shrink-0">
+                                  <div className="w-12 h-12 rounded-none bg-heritage-ink flex items-center justify-center border border-heritage-gold/20 shrink-0">
                                      {item.id === 'googleDrive' ? (
                                        <svg viewBox="0 0 24 24" className="w-7 h-7">
                                           <path fill="#0066da" d="m14 16h4l-2 3z"/>
@@ -1895,8 +2120,8 @@ export default function App() {
                                      )}
                                   </div>
                                   <div className="flex-1 overflow-hidden">
-                                     <h5 className="text-sm font-bold text-white truncate">{item.name}</h5>
-                                     <p className="text-[10px] text-slate-500 truncate">{item.desc}</p>
+                                     <h5 className="text-xs font-black text-heritage-ink uppercase tracking-wider truncate">{item.name}</h5>
+                                     <p className="text-[9px] text-heritage-ink/40 font-bold uppercase truncate">{item.desc}</p>
                                   </div>
                                   <button 
                                     onClick={() => {
@@ -1910,10 +2135,10 @@ export default function App() {
                                        setTimeout(() => setToast(null), 3000);
                                     }}
                                     className={cn(
-                                      "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
+                                      "px-3 py-1.5 rounded-none text-[10px] font-black uppercase tracking-widest transition-all border",
                                       integrations[item.id as keyof typeof integrations] || item.connected
-                                        ? "bg-green-600/20 text-green-400 border border-green-500/20"
-                                        : "bg-white/10 text-white hover:bg-white/20 border border-transparent"
+                                        ? "bg-green-500/10 text-green-700 border-green-200"
+                                        : "bg-heritage-ink/5 text-heritage-ink/40 border-heritage-ink/10 hover:bg-heritage-ink hover:text-heritage-gold hover:border-heritage-gold"
                                     )}
                                   >
                                      {integrations[item.id as keyof typeof integrations] || item.connected ? 'Connected' : 'Connect'}
@@ -1925,15 +2150,15 @@ export default function App() {
                           <div className="mt-4 p-4 rounded-xl bg-orange-500/5 border border-orange-500/20 flex gap-3 items-center">
                              <Shield className="w-5 h-5 text-orange-500" />
                              <p className="text-[10px] text-slate-400">
-                                Leksia menggunakan OAuth 2.0 yang aman. Kami tidak menyimpan kata sandi Google Anda. Akses dibatasi pada metadata dokumen untuk keperluan analisis hukum.
+                                Lexsia menggunakan OAuth 2.0 yang aman. Kami tidak menyimpan kata sandi Google Anda. Akses dibatasi pada metadata dokumen untuk keperluan analisis hukum.
                              </p>
                           </div>
                         </motion.div>
                       )}
                     </AnimatePresence>
 
-                    <div className="mt-12 pt-8 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-6">
-                        <p className="text-[10px] text-slate-500 font-medium">Beberapa perubahan mungkin memerlukan waktu untuk disinkronkan ke AI.</p>
+                    <div className="mt-12 pt-8 border-t border-heritage-ink/10 flex flex-col sm:flex-row items-center justify-between gap-6">
+                        <p className="text-[10px] text-heritage-ink/40 font-medium tracking-tight uppercase">Beberapa perubahan mungkin memerlukan waktu untuk disinkronkan ke AI.</p>
                         <button 
                           onClick={() => {
                             if (settingsTab === 'profile' && activeDocument) {
@@ -1966,14 +2191,14 @@ export default function App() {
                                const updatedContent = tempDiv.innerHTML;
                                if (updatedContent !== activeDocument.content) {
                                   setActiveDocument({ ...activeDocument, content: updatedContent });
-                               }
+                                }
                             }
                             
                             setToast({ message: "Pengaturan berhasil diperbarui!", type: 'success' });
                             setShowSettings(false);
                             setTimeout(() => setToast(null), 3000);
                           }}
-                          className="w-full sm:w-auto px-10 py-4 bg-blue-600 hover:bg-blue-500 text-white font-black uppercase tracking-widest text-[11px] rounded-2xl shadow-[0_10px_30px_rgba(37,99,235,0.3)] transition-all active:scale-95"
+                          className="w-full sm:w-auto px-10 py-4 bg-heritage-ink hover:bg-heritage-gold text-white hover:text-heritage-ink font-black uppercase tracking-[0.2em] text-[11px] rounded-none shadow-2xl transition-all active:scale-95"
                         >
                           Simpan & Terapkan
                         </button>
@@ -2051,51 +2276,51 @@ export default function App() {
                 <motion.div 
                   initial={{ scale: 0.9 }}
                   animate={{ scale: 1 }}
-                  className="bg-slate-900 border border-white/10 p-8 rounded-[2rem] max-w-2xl w-full shadow-2xl relative overflow-hidden"
+                  className="bg-heritage-bone border border-heritage-ink/10 p-10 rounded-none max-w-2xl w-full shadow-2xl relative overflow-hidden"
                   onClick={e => e.stopPropagation()}
                 >
                   <div className="absolute top-0 right-0 p-4">
-                    <button onClick={() => setShowTutorial(false)} className="text-slate-500 hover:text-white transition-colors">
+                    <button onClick={() => setShowTutorial(false)} className="text-heritage-ink/40 hover:text-heritage-ink transition-colors">
                        <Plus className="w-6 h-6 rotate-45" />
                     </button>
                   </div>
-                  <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-                    <Play className="w-6 h-6 text-blue-500 fill-blue-500" />
-                    Tutorial Leksia
+                  <h2 className="text-2xl font-serif font-bold text-heritage-ink mb-10 flex items-center gap-3">
+                    <Play className="w-6 h-6 text-heritage-gold fill-heritage-gold" />
+                    Tutorial Lexsia.ai
                   </h2>
-                  <div className="space-y-6">
-                    <div className="flex gap-4">
-                       <div className="w-8 h-8 rounded-full bg-blue-600/20 text-blue-400 flex items-center justify-center shrink-0 font-bold">1</div>
+                  <div className="space-y-8">
+                    <div className="flex gap-6">
+                       <div className="w-12 h-12 rounded-none bg-heritage-ink text-heritage-gold flex items-center justify-center shrink-0 font-serif font-black text-xl border border-heritage-gold/20">1</div>
                        <div>
-                          <p className="font-bold text-white mb-1">Mulai Riset</p>
-                          <p className="text-sm text-slate-400 leading-relaxed">Ketikkan pertanyaan hukum Anda di kolom input. Gunakan bahasa Indonesia yang jelas.</p>
+                          <p className="font-bold text-heritage-ink mb-1 uppercase tracking-wider text-xs">Mulai Riset</p>
+                          <p className="text-sm text-heritage-ink/60 leading-relaxed font-light">Ketikkan pertanyaan hukum Anda di kolom input. Gunakan bahasa Indonesia yang jelas untuk hasil optimal.</p>
                        </div>
                     </div>
-                    <div className="flex gap-4">
-                       <div className="w-8 h-8 rounded-full bg-blue-600/20 text-blue-400 flex items-center justify-center shrink-0 font-bold">2</div>
+                    <div className="flex gap-6">
+                       <div className="w-12 h-12 rounded-none bg-heritage-ink text-heritage-gold flex items-center justify-center shrink-0 font-serif font-black text-xl border border-heritage-gold/20">2</div>
                        <div>
-                          <p className="font-bold text-white mb-1">Agent Mode</p>
-                          <p className="text-sm text-slate-400 leading-relaxed">Aktifkan Agent Mode untuk analisis yang lebih mendalam dan prosedural.</p>
+                          <p className="font-bold text-heritage-ink mb-1 uppercase tracking-wider text-xs">Expert Research Mode</p>
+                          <p className="text-sm text-heritage-ink/60 leading-relaxed font-light">Aktifkan Research Mode untuk analisis yang lebih mendalam, prosedural, dan berbasis yurisprudensi.</p>
                        </div>
                     </div>
-                    <div className="flex gap-4">
-                       <div className="w-8 h-8 rounded-full bg-blue-600/20 text-blue-400 flex items-center justify-center shrink-0 font-bold">3</div>
+                    <div className="flex gap-6">
+                       <div className="w-12 h-12 rounded-none bg-heritage-ink text-heritage-gold flex items-center justify-center shrink-0 font-serif font-black text-xl border border-heritage-gold/20">3</div>
                        <div>
-                          <p className="font-bold text-white mb-1">Analisis Dokumen</p>
-                          <p className="text-sm text-slate-400 leading-relaxed">Klik ikon penjepit kertas untuk mengunggah dokumen hukum (PDF/Word) untuk dianalisis oleh AI.</p>
+                          <p className="font-bold text-heritage-ink mb-1 uppercase tracking-wider text-xs">Analisis Dokumen</p>
+                          <p className="text-sm text-heritage-ink/60 leading-relaxed font-light">Klik ikon penjepit kertas untuk mengunggah dokumen hukum (PDF/Word) untuk dianotasi oleh AI.</p>
                        </div>
                     </div>
-                    <div className="flex gap-4">
-                       <div className="w-8 h-8 rounded-full bg-blue-600/20 text-blue-400 flex items-center justify-center shrink-0 font-bold">4</div>
+                    <div className="flex gap-6">
+                       <div className="w-12 h-12 rounded-none bg-heritage-ink text-heritage-gold flex items-center justify-center shrink-0 font-serif font-black text-xl border border-heritage-gold/20">4</div>
                        <div>
-                          <p className="font-bold text-white mb-1">Ekspor & Berbagi</p>
-                          <p className="text-sm text-slate-400 leading-relaxed">Simpan hasil riset dalam format PDF menggunakan tombol di header.</p>
+                          <p className="font-bold text-heritage-ink mb-1 uppercase tracking-wider text-xs">Ekspor & Berbagi</p>
+                          <p className="text-sm text-heritage-ink/60 leading-relaxed font-light">Simpan hasil riset dalam format PDF profesional menggunakan tombol di header dashboard.</p>
                        </div>
                     </div>
                   </div>
                   <button 
                     onClick={() => setShowTutorial(false)}
-                    className="w-full mt-8 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl transition-all"
+                    className="w-full mt-12 bg-heritage-ink hover:bg-heritage-gold text-white hover:text-heritage-ink font-black py-5 rounded-none transition-all uppercase tracking-[0.2em] text-xs shadow-xl active:scale-[0.98]"
                   >
                     SAYA MENGERTI
                   </button>
@@ -2109,30 +2334,69 @@ export default function App() {
               <motion.div 
                 initial={{ scale: 0.9, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
-                className="w-24 h-24 bg-gradient-to-tr from-blue-600 to-indigo-400 rounded-3xl shadow-2xl shadow-blue-600/20 flex items-center justify-center mb-10 rotate-12"
+                className="w-24 h-24 bg-heritage-ink flex items-center justify-center mb-10 border border-heritage-gold/20"
               >
-                <Gavel className="w-12 h-12 text-white" />
+                <Gavel className="w-12 h-12 text-heritage-gold" />
               </motion.div>
-              <h2 className="text-4xl font-bold text-white mb-6 tracking-tight">Apa isu hukum yang ingin Anda pecahkan hari ini?</h2>
-              <p className="text-slate-400 mb-12 leading-relaxed text-lg font-medium">Asisten Hukum AI dengan database regulasi lengkap Indonesia siap memberikan analisis presisi.</p>
+              <motion.h2 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2, duration: 0.8 }}
+                className="text-4xl font-serif font-bold text-heritage-ink mb-6 tracking-tight"
+              >
+                Apa isu hukum yang ingin Anda pecahkan hari ini?
+              </motion.h2>
+              <motion.p 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4, duration: 0.8 }}
+                className="text-heritage-ink/40 mb-12 leading-relaxed text-lg font-light"
+              >
+                Asisten Hukum AI dengan database regulasi lengkap Indonesia siap memberikan analisis presisi.
+              </motion.p>
               
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
+              <motion.div 
+                initial="hidden"
+                animate="visible"
+                variants={{
+                  hidden: { opacity: 0 },
+                  visible: {
+                    opacity: 1,
+                    transition: {
+                      staggerChildren: 0.2
+                    }
+                  }
+                }}
+                className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full"
+              >
                 {[
                   "Analisis sanksi Pasal 362 KUHP tentang pencurian.",
                   "Hak karyawan yang terkena PHK menurut Perpu Ciptaker.",
                   "Prosedur pembuatan Akta Pendirian PT di Indonesia.",
                   "Ketentuan Perbuatan Melawan Hukum (Pasal 1365 KUHPer)."
                 ].map((suggestion, i) => (
-                  <button 
+                  <motion.button 
                     key={i}
+                    variants={{
+                      hidden: { opacity: 0, x: 50 },
+                      visible: { 
+                        opacity: 1, 
+                        x: 0,
+                        transition: {
+                          duration: 0.8,
+                          ease: [0.16, 1, 0.3, 1]
+                        }
+                      }
+                    }}
+                    whileHover={{ x: -10 }}
                     onClick={() => setInput(suggestion)}
-                    className="p-5 text-left bg-white/5 border border-white/5 rounded-2xl hover:border-blue-500/50 hover:bg-white/10 transition-all group backdrop-blur-sm"
+                    className="p-6 text-left bg-white border border-heritage-ink/5 hover:border-heritage-gold transition-all group"
                   >
-                    <p className="text-xs font-bold text-blue-400 uppercase tracking-widest mb-1 group-hover:text-blue-300 transition-colors">CONTOH RISET</p>
-                    <p className="text-sm font-semibold text-slate-300 group-hover:text-white transition-colors">{suggestion}</p>
-                  </button>
+                    <p className="text-[10px] font-black text-heritage-gold uppercase tracking-widest mb-2 group-hover:text-heritage-ink transition-colors">CONTOH RISET</p>
+                    <p className="text-sm font-medium text-heritage-ink/60 group-hover:text-heritage-ink transition-colors">{suggestion}</p>
+                  </motion.button>
                 ))}
-              </div>
+              </motion.div>
             </div>
           ) : (
             <div className="max-w-4xl mx-auto w-full space-y-12">
@@ -2147,25 +2411,25 @@ export default function App() {
                   )}
                 >
                   <div className={cn(
-                    "w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-lg border",
+                    "w-10 h-10 flex items-center justify-center shrink-0 border",
                     m.role === 'user' 
-                      ? "bg-blue-600 border-blue-500 text-white" 
-                      : "bg-white/10 border-white/10 text-blue-400 backdrop-blur-xl"
+                      ? "bg-heritage-ink border-heritage-ink text-heritage-gold" 
+                      : "bg-white border-heritage-ink/5 text-heritage-gold"
                   )}>
                     {m.role === 'user' ? <UserIcon className="w-5 h-5" /> : <Scale className="w-5 h-5" />}
                   </div>
                   <div className={cn(
-                    "max-w-[80%] rounded-[2rem] p-6 shadow-2xl border backdrop-blur-xl",
+                    "max-w-[80%] p-6 border shadow-sm",
                     m.role === 'user' 
-                      ? "bg-blue-600/80 text-white border-blue-400 shadow-blue-900/20 rounded-tr-none" 
-                      : "bg-white/5 text-slate-200 border-white/10 shadow-black/40 rounded-tl-none border-l-4 border-l-blue-500"
+                      ? "bg-heritage-ink text-white border-heritage-ink" 
+                      : "bg-white text-heritage-ink border-heritage-ink/5 border-l-4 border-l-heritage-gold"
                   )}>
                     {m.role === 'assistant' && (
-                       <p className="text-[10px] text-blue-400 uppercase tracking-[0.2em] font-black mb-4">Analisis Leksia AI</p>
+                       <p className="text-[10px] text-heritage-gold uppercase tracking-[0.2em] font-black mb-4">Analisis Lexsia AI</p>
                     )}
                     <div className="markdown-body prose prose-invert max-w-none text-sm font-medium leading-relaxed">
                       {m.file && m.file.type.startsWith('image/') && (
-                        <div className="mb-4 rounded-xl overflow-hidden border border-white/20 shadow-lg group-hover:scale-105 transition-transform duration-500">
+                        <div className="mb-4 rounded-none overflow-hidden border border-heritage-ink/10 shadow-lg group-hover:scale-105 transition-transform duration-500">
                           {m.file.data.startsWith('data:image') ? (
                             <img src={m.file.data} alt={m.file.name} className="max-w-full h-auto" />
                           ) : (
@@ -2190,18 +2454,18 @@ export default function App() {
                             }
                           }}
                           className={cn(
-                            "mb-6 p-5 rounded-2xl border transition-all cursor-pointer group/doc flex flex-col sm:flex-row items-center gap-4",
+                            "mb-6 p-5 rounded-none border transition-all cursor-pointer group/doc flex flex-col sm:flex-row items-center gap-4",
                             m.role === 'user' 
-                              ? "bg-white/10 border-white/10 hover:bg-white/20" 
-                              : "bg-white/5 border-white/10 hover:bg-white/10 hover:border-blue-500/30 shadow-lg"
+                              ? "bg-white/5 border-white/5 hover:bg-white/10" 
+                              : "bg-heritage-bone border-heritage-ink/5 hover:bg-white hover:border-heritage-gold/30 shadow-md"
                           )}
                         >
                           <div className="w-16 h-20 rounded-xl bg-white/5 border border-white/10 flex flex-col items-center justify-center relative overflow-hidden group-hover/doc:border-blue-500/50 transition-colors">
-                             <div className="absolute top-0 left-0 right-0 h-4 bg-blue-600/20 border-b border-white/5"></div>
-                             <FileText className="w-8 h-8 text-blue-400 mb-1" />
+                             <div className="absolute top-0 left-0 right-0 h-4 bg-heritage-gold/10 border-b border-heritage-ink/5"></div>
+                             <FileText className="w-8 h-8 text-heritage-gold mb-1" />
                              <div className="absolute bottom-1 right-1">
-                                <div className="w-4 h-4 bg-blue-600 rounded-sm flex items-center justify-center">
-                                   <div className="w-2 h-0.5 bg-white rounded-full"></div>
+                                <div className="w-4 h-4 bg-heritage-gold rounded-none flex items-center justify-center">
+                                   <div className="w-2 h-0.5 bg-heritage-ink rounded-full"></div>
                                 </div>
                              </div>
                           </div>
@@ -2239,7 +2503,7 @@ export default function App() {
                                      setIsSplitView(true);
                                   }
                                 }}
-                                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600/10 border border-blue-500/30 text-blue-400 text-xs font-bold hover:bg-blue-600 hover:text-white transition-all whitespace-nowrap"
+                                className="flex items-center gap-2 px-5 py-2.5 rounded-none bg-heritage-ink border border-heritage-gold/30 text-heritage-gold text-xs font-black uppercase tracking-widest hover:bg-heritage-gold hover:text-heritage-ink transition-all whitespace-nowrap"
                              >
                                 {m.file?.type === 'application/vnd.google-apps.document' ? (
                                    <><ExternalLink className="w-4 h-4" /> Buka di Google Docs</>
@@ -2265,13 +2529,13 @@ export default function App() {
               ))}
               {isSending && (
                 <div className="flex gap-6">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-white/10 border border-white/10 text-blue-400 shadow-lg backdrop-blur-xl animate-pulse">
+                  <div className="w-10 h-10 rounded-none flex items-center justify-center shrink-0 bg-heritage-ink border border-heritage-gold/20 text-heritage-gold shadow-lg animate-pulse">
                     <Scale className="w-5 h-5" />
                   </div>
                   <div className="bg-white/5 border border-white/10 rounded-[2rem] rounded-tl-none p-6 shadow-2xl backdrop-blur-xl">
                     <div className="flex gap-2 items-center">
                       {[0, 1, 2].map(dot => (
-                        <span key={dot} className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: `${dot * 0.15}s` }}></span>
+                        <span key={dot} className="w-2 h-2 bg-heritage-gold rounded-full animate-bounce" style={{ animationDelay: `${dot * 0.15}s` }}></span>
                       ))}
                     </div>
                   </div>
@@ -2287,20 +2551,20 @@ export default function App() {
           <div className="max-w-4xl mx-auto flex flex-col items-center">
             
             {/* Agent Mode Toggle */}
-            <div className="w-full flex items-center justify-between mb-2 px-6 py-2 bg-white/5 backdrop-blur-xl border border-white/5 rounded-t-[1.5rem] border-b-0 max-w-[95%]">
-              <div className="flex items-center gap-2">
-                 <Moon className="w-4 h-4 text-slate-400" />
-                 <span className="text-xs font-semibold text-slate-400">Agent Mode</span>
+            <div className="w-full flex items-center justify-between mb-4 px-8 py-3 bg-white border-b border-heritage-ink/5 max-w-[95%]">
+              <div className="flex items-center gap-3">
+                 <Sparkles className="w-4 h-4 text-heritage-gold" />
+                 <span className="text-[10px] font-black uppercase tracking-widest text-heritage-ink/60">Expert Research Mode</span>
               </div>
               <button 
                 onClick={() => setAgentMode(!agentMode)}
                 className={cn(
-                  "relative w-10 h-5 rounded-full transition-colors duration-200 focus:outline-none ring-offset-2 ring-offset-slate-900 border border-white/10",
-                  agentMode ? "bg-blue-600" : "bg-slate-700"
+                  "relative w-10 h-5 transition-all duration-300",
+                  agentMode ? "bg-heritage-gold" : "bg-heritage-ink/10"
                 )}
               >
                 <div className={cn(
-                  "absolute top-0.5 left-0.5 w-3.5 h-3.5 bg-white rounded-full transition-transform duration-200 transform shadow-sm",
+                  "absolute top-0.5 left-0.5 w-4 h-4 bg-white transition-transform duration-300 transform",
                   agentMode ? "translate-x-5" : "translate-x-0"
                 )} />
               </button>
@@ -2308,7 +2572,7 @@ export default function App() {
 
             <form 
               onSubmit={handleSendMessage}
-              className="w-full relative bg-white/5 backdrop-blur-3xl rounded-[1.5rem] shadow-2xl border border-white/10 focus-within:ring-4 focus-within:ring-blue-500/20 focus-within:border-white/20 transition-all group"
+              className="w-full relative bg-white rounded-none shadow-2xl border border-heritage-ink/5 focus-within:border-heritage-gold transition-all group"
             >
               {/* File Attachment Preview */}
               <AnimatePresence>
@@ -2317,27 +2581,27 @@ export default function App() {
                     initial={{ opacity: 0, y: 10, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                    className="absolute bottom-full left-0 mb-4 p-2 bg-slate-900/80 backdrop-blur-xl border border-white/10 rounded-2xl flex items-center gap-3 shadow-2xl z-20"
+                    className="absolute bottom-full left-0 mb-4 p-3 bg-heritage-ink text-white flex items-center gap-4 shadow-2xl z-20 border border-heritage-gold/20"
                   >
                     {attachedFile.type.startsWith('image/') ? (
-                      <div className="w-12 h-12 rounded-lg overflow-hidden border border-white/10">
+                      <div className="w-12 h-12 overflow-hidden border border-white/10">
                         <img src={attachedFile.data} alt="preview" className="w-full h-full object-cover" />
                       </div>
                     ) : (
-                      <div className="w-12 h-12 rounded-lg bg-blue-600/20 flex items-center justify-center text-blue-400">
+                      <div className="w-12 h-12 bg-heritage-gold/20 flex items-center justify-center text-heritage-gold">
                         <FileText className="w-6 h-6" />
                       </div>
                     )}
                     <div className="flex flex-col pr-8">
-                      <span className="text-[10px] font-black text-slate-300 truncate max-w-[150px]">{attachedFile.name}</span>
-                      <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Siap Menganalisis</span>
+                      <span className="text-[10px] font-black text-white truncate max-w-[150px] uppercase tracking-widest">{attachedFile.name}</span>
+                      <span className="text-[8px] font-bold text-heritage-gold uppercase tracking-widest">Siap Menganalisis</span>
                     </div>
                     <button 
                       type="button"
                       onClick={() => setAttachedFile(null)}
-                      className="absolute top-1 right-1 p-1 hover:bg-white/10 rounded-full transition-colors"
+                      className="absolute top-2 right-2 p-1 text-white/40 hover:text-white transition-colors"
                     >
-                      <X className="w-3 h-3 text-slate-400 hover:text-white" />
+                      <X className="w-3 h-3" />
                     </button>
                   </motion.div>
                 )}
@@ -2348,7 +2612,7 @@ export default function App() {
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="Ketik instruksi atau pertanyaan hukum Anda di sini..."
                 rows={Math.min(input.split('\n').length, 5)}
-                className="w-full pl-6 pr-28 py-6 pb-20 focus:outline-none text-white bg-transparent resize-none font-medium text-sm custom-scrollbar placeholder:text-slate-500"
+                className="w-full pl-6 pr-28 py-6 pb-20 focus:outline-none text-heritage-ink bg-transparent resize-none font-medium text-sm custom-scrollbar placeholder:text-heritage-ink/30"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -2371,8 +2635,8 @@ export default function App() {
                     type="button" 
                     onClick={() => setShowPlusMenu(!showPlusMenu)}
                     className={cn(
-                      "w-10 h-10 flex items-center justify-center rounded-full bg-white/5 border border-white/10 text-slate-400 hover:text-white hover:bg-white/10 transition-all",
-                      showPlusMenu && "bg-white/10 text-white border-white/20"
+                      "w-10 h-10 flex items-center justify-center rounded-none bg-heritage-ink/5 border border-heritage-ink/5 text-heritage-ink/40 hover:text-heritage-gold hover:bg-heritage-ink transition-all",
+                      showPlusMenu && "bg-heritage-ink text-heritage-gold border-heritage-gold/20"
                     )}
                     title="Menu Tambahan"
                   >
@@ -2385,32 +2649,32 @@ export default function App() {
                         initial={{ opacity: 0, y: -10, scale: 0.95 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: -10, scale: 0.95 }}
-                        className="absolute top-full left-0 mt-4 w-72 bg-white text-slate-900 rounded-3xl shadow-2xl overflow-hidden z-50 border border-slate-200"
+                        className="absolute bottom-full left-0 mb-4 w-72 bg-white text-heritage-ink rounded-none shadow-2xl overflow-hidden z-50 border border-heritage-ink/5"
                       >
                          <div className="p-3 space-y-1">
                             {/* Attach Files */}
                             <button 
                               onClick={() => { fileInputRef.current?.click(); setShowPlusMenu(false); }}
-                              className="w-full flex items-center justify-between p-4 hover:bg-slate-50 rounded-2xl transition-all group"
+                              className="w-full flex items-center justify-between p-4 hover:bg-heritage-bone rounded-none transition-all group"
                             >
                                <div className="flex items-center gap-4">
-                                  <Paperclip className="w-5 h-5 text-slate-500 group-hover:text-blue-600" />
-                                  <span className="text-sm font-semibold text-slate-900">Attach Files</span>
+                                  <Paperclip className="w-5 h-5 text-heritage-ink/40 group-hover:text-heritage-gold" />
+                                  <span className="text-[10px] font-black uppercase tracking-widest text-heritage-ink">Lampirkan Berkas</span>
                                </div>
                             </button>
 
                             {/* Memories */}
                             <button 
                               onClick={() => {
-                                setError("Memori Percakapan: Leksia sedang mengingat konteks riset sebelumnya untuk akurasi lebih baik.");
+                                setError("Memori Percakapan: Lexsia sedang mengingat konteks riset sebelumnya untuk akurasi lebih baik.");
                                 setShowPlusMenu(false);
                                 setTimeout(() => setError(null), 4000);
                               }}
-                              className="w-full flex items-center justify-between p-4 hover:bg-slate-50 rounded-2xl transition-all group"
+                              className="w-full flex items-center justify-between p-4 hover:bg-heritage-bone rounded-none transition-all group"
                             >
                                <div className="flex items-center gap-4">
-                                  <Brain className="w-5 h-5 text-slate-500 group-hover:text-blue-600" />
-                                  <span className="text-sm font-semibold text-slate-900">Memories</span>
+                                  <Brain className="w-5 h-5 text-heritage-ink/40 group-hover:text-heritage-gold" />
+                                  <span className="text-[10px] font-black uppercase tracking-widest text-heritage-ink">Memori Riset</span>
                                </div>
                             </button>
 
@@ -2420,13 +2684,13 @@ export default function App() {
                                 setInput("Saya butuh Playbook/Panduan Prosedural untuk: [Sebutkan kasus Anda, misal: Pendirian PT, Gugatan Perdata]");
                                 setShowPlusMenu(false);
                               }}
-                              className="w-full flex items-center justify-between p-4 hover:bg-slate-50 rounded-2xl transition-all group"
+                              className="w-full flex items-center justify-between p-4 hover:bg-heritage-bone rounded-none transition-all group"
                             >
                                <div className="flex items-center gap-4">
-                                  <Book className="w-5 h-5 text-slate-500 group-hover:text-blue-600" />
-                                  <span className="text-sm font-semibold text-slate-900">Playbooks</span>
+                                  <Book className="w-5 h-5 text-heritage-ink/40 group-hover:text-heritage-gold" />
+                                  <span className="text-[10px] font-black uppercase tracking-widest text-heritage-ink">Playbooks</span>
                                </div>
-                               <ExternalLink className="w-4 h-4 text-slate-300 group-hover:text-slate-500" />
+                               <ExternalLink className="w-4 h-4 text-heritage-ink/20 group-hover:text-heritage-ink/60" />
                             </button>
 
                             {/* Prompts */}
@@ -2435,24 +2699,24 @@ export default function App() {
                                 setInput("Berikan draf surat kuasa untuk perkara perdata dengan detail sebagai berikut: ");
                                 setShowPlusMenu(false);
                               }}
-                              className="w-full flex items-center justify-between p-4 hover:bg-slate-50 rounded-2xl transition-all group"
+                              className="w-full flex items-center justify-between p-4 hover:bg-heritage-bone rounded-none transition-all group"
                             >
                                <div className="flex items-center gap-4">
-                                  <MessageSquare className="w-5 h-5 text-slate-500 group-hover:text-blue-600" />
-                                  <span className="text-sm font-semibold text-slate-900">Prompts</span>
+                                  <MessageSquare className="w-5 h-5 text-heritage-ink/40 group-hover:text-heritage-gold" />
+                                  <span className="text-[10px] font-black uppercase tracking-widest text-heritage-ink">Templat Prompt</span>
                                </div>
-                               <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-500" />
+                               <ChevronRight className="w-4 h-4 text-heritage-ink/20 group-hover:text-heritage-ink/60" />
                             </button>
 
                             {/* Language */}
-                            <div className="flex items-center justify-between p-4">
+                            <div className="flex items-center justify-between p-4 bg-heritage-bone/50 blur-[0.5px]">
                                <div className="flex items-center gap-4">
-                                  <Globe className="w-5 h-5 text-slate-500" />
-                                  <span className="text-sm font-semibold text-slate-900">Language</span>
+                                  <Globe className="w-5 h-5 text-heritage-ink/20" />
+                                  <span className="text-[10px] font-black uppercase tracking-widest text-heritage-ink/40 text-left">Internal Lexsia<br/>Translation</span>
                                </div>
-                               <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-xl border border-slate-200">
-                                  <span className="text-[11px] font-bold text-slate-600">English</span>
-                                  <Languages className="w-3.5 h-3.5 text-slate-400" />
+                               <div className="flex items-center gap-2 px-3 py-1.5 bg-heritage-ink text-heritage-gold border border-heritage-gold/20">
+                                  <span className="text-[9px] font-bold">Auto</span>
+                                  <Sparkles className="w-3 h-3" />
                                </div>
                             </div>
                          </div>
@@ -2465,12 +2729,12 @@ export default function App() {
                   onClick={handleSmartAction}
                   disabled={isEnhancing}
                   className={cn(
-                    "w-10 h-10 flex items-center justify-center rounded-full bg-white/5 border border-white/10 text-slate-400 hover:text-white hover:bg-white/10 transition-all",
+                    "w-10 h-10 flex items-center justify-center rounded-none bg-heritage-ink/5 border border-heritage-ink/5 text-heritage-ink/40 hover:text-heritage-gold hover:bg-heritage-ink transition-all",
                     (!input.trim() && (!activeChat || messages.length === 0)) && "opacity-50 pointer-events-none"
                   )}
                   title={input.trim() ? "Tingkatkan Prompt" : "Ringkas Percakapan"}
                 >
-                  {isEnhancing ? <Loader2 className="w-5 h-5 animate-spin text-blue-400" /> : <Sparkles className="w-5 h-5" />}
+                  {isEnhancing ? <Loader2 className="w-5 h-5 animate-spin text-heritage-gold" /> : <Sparkles className="w-5 h-5" />}
                 </button>
               </div>
 
@@ -2479,7 +2743,7 @@ export default function App() {
                 <button 
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="p-3 text-slate-400 hover:text-white transition-colors bg-white/5 rounded-2xl border border-transparent hover:border-white/10"
+                  className="p-3 text-heritage-ink/40 hover:text-heritage-gold transition-all bg-heritage-ink/5 border border-transparent hover:border-heritage-ink/10"
                   title="Lampirkan Dokumen"
                 >
                   <Paperclip className="w-5 h-5" />
@@ -2488,13 +2752,13 @@ export default function App() {
                   type="submit"
                   disabled={!input.trim() || isSending}
                   className={cn(
-                    "p-3.5 rounded-2xl transition-all font-bold flex items-center justify-center",
-                    input.trim() && !isSending 
-                      ? "text-blue-500 hover:text-blue-400 hover:scale-110 active:scale-95" 
-                      : "text-slate-600 pointer-events-none"
+                    "px-8 py-3 transition-all active:scale-95 font-black text-[10px] uppercase tracking-[0.2em]",
+                    input.trim() 
+                      ? "bg-heritage-ink text-heritage-gold shadow-2xl hover:bg-heritage-gold hover:text-heritage-ink" 
+                      : "bg-heritage-ink/5 text-heritage-ink/20 cursor-not-allowed"
                   )}
                 >
-                  <Send className="w-6 h-6" />
+                  KIRIM
                 </button>
               </div>
             </form>
@@ -2502,27 +2766,27 @@ export default function App() {
             <div className="flex flex-wrap items-center justify-center gap-4 mt-8">
                <button 
                   onClick={() => setShowTutorial(true)}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-white/5 border border-white/10 rounded-full text-slate-300 text-xs font-semibold hover:bg-white/10 transition-all shadow-sm"
+                  className="flex items-center gap-2 px-6 py-2.5 bg-heritage-ink/5 border border-heritage-ink/5 rounded-none text-heritage-ink/60 text-[10px] font-black uppercase tracking-widest hover:bg-heritage-ink hover:text-heritage-gold transition-all shadow-sm"
                >
-                  <Play className="w-4 h-4 text-blue-500" />
-                  Tutorials
+                  <Play className="w-4 h-4 text-heritage-gold" />
+                  Panduan Penggunaan
                </button>
                
                <div className="relative">
                  <button 
                     onClick={() => setShowConnectMenu(!showConnectMenu)}
                     className={cn(
-                      "flex items-center gap-2 px-6 py-2.5 bg-white/5 border border-white/10 rounded-full text-slate-300 text-xs font-semibold hover:bg-white/10 transition-all shadow-sm",
-                      showConnectMenu && "bg-white/10 border-white/20"
+                      "flex items-center gap-2 px-6 py-2.5 bg-heritage-ink/5 border border-heritage-ink/5 rounded-none text-heritage-ink/60 text-[10px] font-black uppercase tracking-widest hover:bg-heritage-ink hover:text-heritage-gold transition-all shadow-sm",
+                      showConnectMenu && "bg-heritage-ink text-heritage-gold border-heritage-gold/20"
                     )}
                  >
                     <div className="flex -space-x-1.5 mr-1">
-                      <div className="w-4 h-4 bg-slate-800 border border-white/5 rounded-sm"></div>
-                      <div className="w-4 h-4 bg-blue-600 border border-white/10 rounded-sm overflow-hidden flex items-center justify-center">
-                         <div className="w-2 h-2 bg-white rounded-full"></div>
+                      <div className="w-4 h-4 bg-heritage-ink border border-white/5 rounded-none"></div>
+                      <div className="w-4 h-4 bg-heritage-gold border border-white/10 rounded-none overflow-hidden flex items-center justify-center">
+                         <div className="w-2 h-2 bg-heritage-ink rounded-full"></div>
                       </div>
                     </div>
-                    Connect Your Data
+                    Hubungkan Data Akun
                  </button>
 
                  <AnimatePresence>
@@ -2541,7 +2805,7 @@ export default function App() {
                                onClick={() => { fileInputRef.current?.click(); setShowConnectMenu(false); }}
                                className="w-full flex items-center gap-3 p-3 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all text-xs font-semibold"
                              >
-                                <div className="w-8 h-8 rounded-lg bg-blue-600/20 text-blue-400 flex items-center justify-center">
+                                <div className="w-8 h-8 rounded-none bg-heritage-ink/10 text-heritage-gold flex items-center justify-center">
                                    <Laptop className="w-4 h-4" />
                                 </div>
                                 Local Computer
@@ -2572,15 +2836,15 @@ export default function App() {
 
                <button 
                   onClick={copyInviteLink}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-white/5 border border-white/10 rounded-full text-slate-300 text-xs font-semibold hover:bg-white/10 transition-all shadow-sm"
+                  className="flex items-center gap-2 px-6 py-2.5 bg-heritage-ink text-white border border-heritage-gold/20 rounded-none text-[10px] font-black uppercase tracking-widest hover:bg-heritage-gold hover:text-heritage-ink transition-all shadow-lg"
                >
-                  <Users className="w-4 h-4 text-slate-400" />
+                  <Users className="w-4 h-4 text-heritage-gold" />
                   Invite Team
                </button>
             </div>
 
-            <p className="text-center text-[10px] text-slate-700 mt-10 uppercase tracking-[0.2em] font-black">
-              Leksia dilatih dengan KUHP, KUHPer & Peraturan Perundang-undangan Terkini
+            <p className="text-center text-[10px] text-heritage-ink/30 mt-12 uppercase tracking-[0.3em] font-bold">
+              Lexsia.ai dilatih dengan KUHP, KUHPer & Peraturan Perundang-undangan Terkini
             </p>
           </div>
         </div>
@@ -2593,7 +2857,7 @@ export default function App() {
                 initial={{ opacity: 0, x: 200 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 200 }}
-                className="w-1/2 bg-[#f8f9fa] flex flex-col h-full border-l border-slate-200 relative overflow-hidden"
+                className="w-1/2 bg-heritage-bone flex flex-col h-full border-l border-heritage-ink/5 relative overflow-hidden"
               >
                  {/* Polished Compact Header inspired by the design */}
                  <div className="bg-white px-3 py-2 border-b border-slate-200 flex items-center justify-between shadow-sm z-10 shrink-0">
@@ -2607,7 +2871,7 @@ export default function App() {
                        {/* AI / Gemini Icon */}
                        <button 
                           onClick={() => {
-                            setToast({ message: "Leksia AI sedang menganalisis dokumen...", type: 'info' });
+                            setToast({ message: "Lexsia AI sedang menganalisis dokumen...", type: 'info' });
                             setTimeout(() => setToast(null), 3000);
                           }}
                           className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-blue-50 transition-colors text-blue-600 group"
@@ -2785,7 +3049,7 @@ export default function App() {
                           <CheckCircle className={cn("w-3 h-3 transition-colors", isSaving ? "text-slate-300" : "text-green-500")} />
                           <span className="text-[10px] font-medium">{isSaving ? 'Menyimpan perubahan...' : 'Semua perubahan disimpan'}</span>
                        </div>
-                       <span className="text-[10px] font-medium uppercase tracking-widest opacity-50">Leksia v4.0 AI-Core</span>
+                       <span className="text-[10px] font-medium uppercase tracking-widest opacity-50">Lexsia v4.0 AI-Core</span>
                     </div>
                     <div className="flex items-center gap-4">
                        <button onClick={exportToDoc} className="text-[10px] font-bold text-blue-600 hover:underline uppercase tracking-tight">Unduh DOCX</button>
@@ -2835,35 +3099,35 @@ export default function App() {
                 </div>
 
                 <div className="space-y-6">
-                  <div className="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-300 text-xs leading-relaxed">
+                  <div className="p-4 rounded-none bg-heritage-ink border border-heritage-gold/20 text-heritage-gold text-xs leading-relaxed">
                     <p className="font-bold mb-2 flex items-center gap-2">
                        <CheckCircle className="w-4 h-4" /> 
-                       Solusi untuk Mengaktifkan Fitur:
+                       Panduan Aktivasi Fitur:
                     </p>
-                    Fitur ini memerlukan konfigurasi API dari Google Cloud. Ikuti langkah berikut untuk mengaktifkannya di akun Anda.
+                    Fitur ini memerlukan konfigurasi API dari Google Cloud Cloud Console. Ikuti langkah protokol berikut untuk mengaktifkannya.
                   </div>
 
                   <div className="space-y-4">
                     <div className="flex gap-4">
-                      <div className="w-6 h-6 rounded-full bg-white/10 text-white text-[10px] font-bold flex items-center justify-center shrink-0">1</div>
+                  <div className="w-6 h-6 rounded-none bg-heritage-ink text-heritage-gold text-[10px] font-bold flex items-center justify-center shrink-0 border border-heritage-gold/20">1</div>
                       <div className="text-sm text-slate-300">
                         Buka <a href="https://console.cloud.google.com/" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">Google Cloud Console</a> dan buat proyek baru.
                       </div>
                     </div>
                     <div className="flex gap-4">
-                      <div className="w-6 h-6 rounded-full bg-white/10 text-white text-[10px] font-bold flex items-center justify-center shrink-0">2</div>
+                      <div className="w-6 h-6 rounded-none bg-heritage-ink text-heritage-gold text-[10px] font-bold flex items-center justify-center shrink-0 border border-heritage-gold/20">2</div>
                       <div className="text-sm text-slate-300">
                         Aktifkan <strong>Google Drive API</strong> dan <strong>Google Picker API</strong> di API Library.
                       </div>
                     </div>
                     <div className="flex gap-4">
-                      <div className="w-6 h-6 rounded-full bg-white/10 text-white text-[10px] font-bold flex items-center justify-center shrink-0">3</div>
+                      <div className="w-6 h-6 rounded-none bg-heritage-ink text-heritage-gold text-[10px] font-bold flex items-center justify-center shrink-0 border border-heritage-gold/20">3</div>
                       <div className="text-sm text-slate-300">
                         Buat <strong>OAuth Client ID</strong> (Web Application) dan <strong>API Key</strong>.
                       </div>
                     </div>
                     <div className="flex gap-4">
-                      <div className="w-6 h-6 rounded-full bg-white/10 text-white text-[10px] font-bold flex items-center justify-center shrink-0">4</div>
+                      <div className="w-6 h-6 rounded-none bg-heritage-ink text-heritage-gold text-[10px] font-bold flex items-center justify-center shrink-0 border border-heritage-gold/20">4</div>
                       <div className="text-sm text-slate-300">
                         Masuk ke <strong>Settings</strong> di AI Studio ini, lalu tambahkan variabel berikut:
                         <div className="mt-2 bg-black/40 p-3 rounded-lg font-mono text-[10px] border border-white/5 select-all">
@@ -2878,15 +3142,15 @@ export default function App() {
                 <div className="mt-10 flex flex-col sm:flex-row gap-3">
                   <button 
                     onClick={simulateDriveConnection}
-                    className="flex-1 py-4 rounded-2xl bg-blue-600 text-white font-bold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                    className="flex-1 py-4 rounded-none bg-heritage-ink hover:bg-heritage-gold text-white hover:text-heritage-ink font-black uppercase tracking-widest text-[10px] border border-heritage-gold/30 transition-all flex items-center justify-center gap-2"
                   >
-                    Coba Mode Simulasi <Sparkles className="w-4 h-4" />
+                    COBA MODE SIMULASI <Sparkles className="w-4 h-4" />
                   </button>
                   <button 
                     onClick={() => setShowDriveSetup(false)}
-                    className="flex-1 py-4 rounded-2xl bg-white text-slate-900 font-bold hover:bg-slate-100 transition-colors"
+                    className="flex-1 py-4 rounded-none bg-heritage-bone text-heritage-ink font-black uppercase tracking-widest text-[10px] border border-heritage-ink/10 hover:bg-white transition-all"
                   >
-                    Saya Mengerti
+                    SAYA MENGERTI
                   </button>
                 </div>
                 <div className="mt-4">
@@ -2894,9 +3158,9 @@ export default function App() {
                     href="https://developers.google.com/drive/picker/guides/overview" 
                     target="_blank" 
                     rel="noreferrer"
-                    className="w-full py-4 rounded-2xl bg-white/5 border border-white/10 text-white font-bold hover:bg-white/10 transition-all flex items-center justify-center gap-2"
+                    className="w-full py-4 rounded-none bg-white/5 border border-heritage-ink/5 text-heritage-ink/40 font-black uppercase tracking-widest text-[9px] hover:text-heritage-ink transition-all flex items-center justify-center gap-2"
                   >
-                    Dokumentasi Google <ExternalLink className="w-4 h-4" />
+                    DOKUMENTASI API RESMI <ExternalLink className="w-3 h-3" />
                   </a>
                 </div>
               </div>

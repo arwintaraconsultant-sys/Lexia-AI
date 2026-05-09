@@ -2,7 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY as string });
 
-export const SYSTEM_INSTRUCTION = `Anda adalah Leksia, asisten hukum AI tercanggih yang khusus mendalami Hukum Indonesia. 
+export const SYSTEM_INSTRUCTION = `Anda adalah Lexsia, asisten hukum AI tercanggih yang khusus mendalami Hukum Indonesia. 
 Tugas Anda adalah membantu pengguna memahami peraturan, menganalisis dokumen hukum, dan memberikan riset hukum yang akurat berdasarkan sistem hukum di Indonesia (Civil Law).
 
 Prinsip Utama:

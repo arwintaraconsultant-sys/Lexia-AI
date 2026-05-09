@@ -9,6 +9,12 @@
   --color-glass-white: rgba(255, 255, 255, 0.03);
   --color-glass-border: rgba(255, 255, 255, 0.08);
   --color-legal-gold: #C5A059;
+
+  /* Indonesian Heritage Palette */
+  --color-heritage-bone: #F5F2ED;
+  --color-heritage-ink: #1A1A1A;
+  --color-heritage-gold: #C5A059;
+  --color-heritage-forest: #2D4333;
 }
 
 @layer base {
