@@ -85,7 +85,7 @@ import {
   updateDoc
 } from 'firebase/firestore';
 import { auth, db, googleProvider, OperationType, handleFirestoreError } from './lib/firebase';
-import { getGeminiResponse, enhancePrompt } from './lib/gemini';
+import { getOpenAIResponse as getAIResponse, enhancePromptWithOpenAI as enhancePrompt } from './lib/openai';
 import { compressImage, getBase64Size } from './lib/imageUtils';
 import mammoth from 'mammoth';
 import ReactMarkdown from 'react-markdown';
@@ -454,7 +454,7 @@ export default function App() {
       let fileToSave = attachedFile ? { ...attachedFile } : null;
       if (fileToSave && getBase64Size(fileToSave.data) > 800000) {
         // If still > 800KB, we don't save the full data to Firestore to avoid crash
-        // but we still send it to Gemini for this turn
+        // but we still send it to AI for this turn
         fileToSave.data = "[Data file terlalu besar untuk disimpan di riwayat chat, namun telah dianalisis]";
       }
 
@@ -473,13 +473,13 @@ export default function App() {
         }).catch(console.error);
       }
 
-      // 2. Get Gemini response
+      // 2. Get AI response
       const history = messages.map(m => ({
         role: (m.role === 'user' ? 'user' : 'model') as 'user' | 'model',
         parts: [{ text: m.content }]
       }));
       
-      const aiResponse = await getGeminiResponse(userMessage, history, agentMode, attachedFile || undefined, {
+      const aiResponse = await getAIResponse(userMessage, history, agentMode, attachedFile || undefined, {
         name: lawFirmProfile.name,
         address: lawFirmProfile.address,
         contact: lawFirmProfile.contact
@@ -2868,7 +2868,7 @@ export default function App() {
                     </div>
                     
                     <div className="flex items-center gap-0.5 shrink-0">
-                       {/* AI / Gemini Icon */}
+                       {/* AI Icon */}
                        <button 
                           onClick={() => {
                             setToast({ message: "Lexsia AI sedang menganalisis dokumen...", type: 'info' });
