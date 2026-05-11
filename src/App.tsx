@@ -85,7 +85,7 @@ import {
   updateDoc
 } from 'firebase/firestore';
 import { auth, db, googleProvider, OperationType, handleFirestoreError } from './lib/firebase';
-import { getOpenAIResponse as getAIResponse, enhancePromptWithOpenAI as enhancePrompt } from './lib/openai';
+import { getAIResponse, enhancePrompt, AIProvider } from './lib/aiService';
 import { compressImage, getBase64Size } from './lib/imageUtils';
 import mammoth from 'mammoth';
 import ReactMarkdown from 'react-markdown';
@@ -238,7 +238,8 @@ export default function App() {
     aiTemperature: 0.7,
     aiCreativity: 'balanced',
     aiPersona: 'professional',
-    neuralDrafting: false
+    neuralDrafting: false,
+    provider: 'gemini' as AIProvider
   });
   const [integrations, setIntegrations] = useState({
     googleSheets: false,
@@ -479,7 +480,7 @@ export default function App() {
         parts: [{ text: m.content }]
       }));
       
-      const aiResponse = await getAIResponse(userMessage, history, agentMode, attachedFile || undefined, {
+      const aiResponse = await getAIResponse(settings.provider, userMessage, history, agentMode, attachedFile || undefined, {
         name: lawFirmProfile.name,
         address: lawFirmProfile.address,
         contact: lawFirmProfile.contact
@@ -902,7 +903,7 @@ export default function App() {
       // Enhance current input
       setIsEnhancing(true);
       try {
-        const enhanced = await enhancePrompt(input.trim());
+        const enhanced = await enhancePrompt(settings.provider, input.trim());
         setInput(enhanced);
         setError("Prompt Anda telah ditingkatkan untuk hasil yang lebih presisi.");
         setTimeout(() => setError(null), 3000);
@@ -1971,6 +1972,32 @@ export default function App() {
                           exit={{ opacity: 0, x: -10 }}
                           className="space-y-10"
                         >
+                          {/* AI Provider Selection */}
+                          <div>
+                            <label className="text-[10px] uppercase tracking-widest font-black text-heritage-ink/40 mb-4 block">AI Intelligence Provider</label>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                              {[
+                                { id: 'gemini', name: 'Google Gemini', desc: 'Fast & Versatile' },
+                                { id: 'claude', name: 'Anthropic Claude', desc: 'Nuanced & Precise' },
+                                { id: 'openai', name: 'OpenAI GPT-4o', desc: 'Powerful & Logical' }
+                              ].map((p) => (
+                                <button 
+                                  key={p.id}
+                                  onClick={() => setSettings({...settings, provider: p.id as AIProvider})}
+                                  className={cn(
+                                    "flex flex-col items-start p-4 border transition-all rounded-none",
+                                    settings.provider === p.id 
+                                      ? "bg-heritage-gold border-heritage-gold shadow-lg" 
+                                      : "bg-heritage-bone border-heritage-ink/10 hover:bg-white text-heritage-ink/40"
+                                  )}
+                                >
+                                  <span className={cn("text-[11px] font-black uppercase tracking-tight mb-1", settings.provider === p.id ? "text-heritage-ink" : "text-heritage-ink/60")}>{p.name}</span>
+                                  <span className={cn("text-[8px] font-bold uppercase", settings.provider === p.id ? "text-heritage-ink/60" : "text-heritage-ink/30")}>{p.desc}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                             <div className="space-y-8">
                                <div>

@@ -1,6 +1,9 @@
 import { SYSTEM_INSTRUCTION } from "./gemini";
 
-export const getOpenAIResponse = async (
+export type AIProvider = 'gemini' | 'claude' | 'openai';
+
+export const getAIResponse = async (
+  provider: AIProvider,
   prompt: string, 
   history: { role: 'user' | 'model', parts: { text: string }[] }[] = [], 
   isAgentMode: boolean = false,
@@ -12,24 +15,19 @@ export const getOpenAIResponse = async (
     : SYSTEM_INSTRUCTION;
 
   if (profile) {
-    instruction += `\n\nIDENTITAS KANTOR HUKUM PENGGUNA (Gunakan data ini secara otomatis):
+    instruction += `\n\nIDENTITAS KANTOR HUKUM PENGGUNA:
 Nama Kantor: ${profile.name}
 Alamat: ${profile.address}
-Kontak: ${profile.contact}
-
-INSTRUKSI KHUSUS PEMBUATAN DRAF:
-1. Anda WAJIB menggunakan identitas kantor hukum di atas di dalam isi dokumen. JANGAN gunakan placeholder seperti "[Nama Law Firm]", "[Alamat]", atau "[Identitas Penentu]".
-2. HANYA kembalikan bagian ISI (BODY) dokumen hukum saja. 
-3. JANGAN menyertakan KOP SURAT (Letterhead), LOGO, atau FOOTER dalam jawaban Anda, karena sistem akan menambahkannya secara otomatis menggunakan template profesional.
-4. Gunakan format Markdown yang bersih.`;
+Kontak: ${profile.contact}`;
   }
 
-  const response = await fetch('/api/openai', {
+  const response = await fetch('/api/ai', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
+      provider,
       prompt,
       history,
       systemInstruction: instruction,
@@ -40,26 +38,27 @@ INSTRUKSI KHUSUS PEMBUATAN DRAF:
 
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.error || 'Terjadi kesalahan saat memanggil OpenAI API');
+    throw new Error(error.error || 'Terjadi kesalahan saat memanggil AI API');
   }
 
   const data = await response.json();
   return data.text;
 };
 
-export const enhancePromptWithOpenAI = async (prompt: string) => {
+export const enhancePrompt = async (provider: AIProvider, prompt: string) => {
   const instruction = `Tugas Anda adalah memperbaiki dan memperjelas prompt hukum yang diajukan pengguna agar menghasilkan jawaban yang lebih akurat dari AI Hukum.
 - Jika prompt terlalu singkat, tambahkan konteks hukum Indonesia yang relevan.
 - Jika bahasa tidak formal, ubah menjadi lebih profesional secara hukum.
 - Pastikan fokus pada analisis regulasi Indonesia.
 - KEMBALIKAN HANYA PROMPT YANG TELAH DIUBAH, TANPA PENJELASAN LAIN.`;
 
-  const response = await fetch('/api/openai', {
+  const response = await fetch('/api/ai', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
+      provider,
       prompt: `Tolong perbaiki prompt ini agar lebih baik untuk asisten hukum AI: "${prompt}"`,
       history: [],
       systemInstruction: instruction,
@@ -69,7 +68,7 @@ export const enhancePromptWithOpenAI = async (prompt: string) => {
 
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.error || 'Terjadi kesalahan saat memanggil OpenAI API');
+    throw new Error(error.error || 'Terjadi kesalahan saat memanggil AI API');
   }
 
   const data = await response.json();
