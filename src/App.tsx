@@ -1,6 +1,9 @@
 /// <reference types="vite/client" />
 import React, { useState, useEffect, useRef } from 'react';
 import { 
+  Calendar,
+  Mail,
+  Table as TableIcon,
   Plus, 
   Send, 
   MessageSquare, 
@@ -60,7 +63,6 @@ import {
   MoreVertical,
   Type,
   Shield,
-  Table as TableIcon,
   Database,
   Building2,
   Link as LinkIcon
@@ -85,13 +87,16 @@ import {
   updateDoc
 } from 'firebase/firestore';
 import { auth, db, googleProvider, OperationType, handleFirestoreError } from './lib/firebase';
-import { getAIResponse, enhancePrompt, AIProvider } from './lib/aiService';
+import { getGeminiResponse, enhancePrompt } from './lib/gemini';
 import { compressImage, getBase64Size } from './lib/imageUtils';
 import mammoth from 'mammoth';
 import ReactMarkdown from 'react-markdown';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+// @ts-ignore
+import { asBlob } from 'html-docx-js-typescript';
+import { saveAs } from 'file-saver';
 
 // Helper for tailwind class merging
 function cn(...inputs: ClassValue[]) {
@@ -123,6 +128,8 @@ interface UploadHistoryItem {
   type: string;
 }
 
+import { DOCUMENT_TEMPLATES } from './lib/templates';
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -140,17 +147,32 @@ export default function App() {
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
   const [showConnectMenu, setShowConnectMenu] = useState(false);
+const PROMPT_TEMPLATES = [
+    { title: "Draf Surat Kuasa", content: "Berikan draf surat kuasa untuk perkara perdata dengan detail sebagai berikut: [Sebutkan pihak dan objek perkara]" },
+    { title: "Analisis Pasal", content: "Lakukan analisis hukum terhadap pasal ini [Sebutkan pasal/UU] dikaitkan dengan kasus [Sebutkan kasus]" },
+    { title: "Draf Gugatan", content: "Buat draf surat gugatan wanprestasi untuk kasus: [Jelaskan singkat kronologi kronologi]" },
+    { title: "Review Kontrak", content: "Tolong review draf kontrak berikut dan berikan poin-poin risiko hukumnya: [Tempel teks kontrak]" },
+    { title: "Somasi Hukum", content: "Buat draf surat teguran/somasi kepada: [Nama Pihak] karena: [Alasan Somasi]" },
+    { title: "Opini Hukum", content: "Berikan Legal Opinion (Pendapat Hukum) mengenai isu: [Sebutkan isu hukum yang dihadapi]" },
+    { title: "Perjanjian Kerja", content: "Buat draf Perjanjian Kerja Waktu Tertentu (PKWT) untuk posisi: [Jabatan] dengan masa kerja: [Durasi]" },
+    { title: "Gugatan Perceraian", content: "Buat draf gugatan perceraian di Pengadilan Agama dengan alasan: [Sebutkan alasan sesuai UU Perkawinan]" },
+    { title: "Memo Internal", content: "Buat memo hukum internal mengenai kepatuhan terhadap regulasi: [Sebutkan regulasi baru]" },
+    { title: "Draf Akta Notaris", content: "Buat kerangka akta notaris untuk pendirian badan usaha: [Sebutkan bentuk badan usaha]" }
+  ];
+  
+  const [showPromptSubmenu, setShowPromptSubmenu] = useState(false);
   const [isSplitView, setIsSplitView] = useState(false);
   const [showDriveSetup, setShowDriveSetup] = useState(false);
   const [toast, setToast] = useState<{ message: string, type: 'error' | 'success' | 'info' } | null>(null);
   const [activeDocument, setActiveDocument] = useState<{ id: string, name: string, content: string } | null>(null);
+  const [selectedTemplate, setSelectedTemplate] = useState('official');
   const [attachedFile, setAttachedFile] = useState<{ name: string, type: string, data: string } | null>(null);
   const [zoomLevel, setZoomLevel] = useState(100);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(3);
   const [uploadHistory, setUploadHistory] = useState<UploadHistoryItem[]>([
-    { id: '1', name: 'Putusan_MK_No_90.pdf', size: '2.4 MB', date: 'Hari ini', url: 'https://drive.google.com/file/d/1', type: 'application/pdf' },
-    { id: '2', name: 'Kontrak_Kerja_Sama.docx', size: '1.1 MB', date: 'Kemarin', url: 'https://docs.google.com/document/d/2', type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+    { id: '1', name: 'Putusan_MK_No_90.pdf', size: '2.4 MB', date: 'Hari ini', url: 'https://1drv.ms/f/s!A', type: 'application/pdf' },
+    { id: '2', name: 'Kontrak_Kerja_Sama.docx', size: '1.1 MB', date: 'Kemarin', url: 'https://1drv.ms/w/s!B', type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
   ]);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -165,20 +187,20 @@ export default function App() {
   };
 
   const handleAutoUpload = (files: FileList) => {
-    setToast({ message: `Mengunggah ${files.length} dokumen ke Google Drive...`, type: 'info' });
+    setToast({ message: `Mengunggah ${files.length} dokumen ke OneDrive...`, type: 'info' });
     
     const newItems: UploadHistoryItem[] = Array.from(files).map(file => ({
       id: Math.random().toString(36).substr(2, 9),
       name: file.name,
       size: formatFileSize(file.size),
       date: 'Baru saja',
-      url: file.type.includes('pdf') ? 'https://drive.google.com/file/d/1' : 'https://docs.google.com/document/u/0/',
+      url: file.type.includes('pdf') ? 'https://1drv.ms/f/s!C' : 'https://1drv.ms/w/s!D',
       type: file.type
     }));
 
     setTimeout(() => {
        setUploadHistory(prev => [...newItems, ...prev]);
-       setToast({ message: "Berhasil diunggah dan disimpan otomatis ke Google Drive!", type: 'success' });
+       setToast({ message: "Berhasil diunggah dan disimpan otomatis ke OneDrive!", type: 'success' });
        setTimeout(() => setToast(null), 3000);
     }, 2000);
   };
@@ -194,11 +216,11 @@ export default function App() {
 
   // Sync editor when active document changes
   useEffect(() => {
-    if (activeDocument && editorRef.current && activeDocument.content !== lastSyncedContent.current) {
+    if (activeDocument && editorRef.current && (activeDocument.content !== lastSyncedContent.current || !editorRef.current.innerHTML.trim())) {
         editorRef.current.innerHTML = activeDocument.content;
         lastSyncedContent.current = activeDocument.content;
     }
-  }, [activeDocument?.id]);
+  }, [activeDocument?.id, activeDocument?.content]);
   
   const handleDocScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const container = e.currentTarget;
@@ -208,6 +230,48 @@ export default function App() {
     if (newPage !== currentPage) {
       setCurrentPage(newPage);
     }
+  };
+
+  const wrapWithTemplate = (bodyContent: string, templateKey: string, docName: string) => {
+    const template = DOCUMENT_TEMPLATES[templateKey as keyof typeof DOCUMENT_TEMPLATES] || DOCUMENT_TEMPLATES.official;
+    return `
+      <div class="legal-document-container" style="font-family: 'Times New Roman', Times, serif; color: black; background: white; line-height: 1.5;">
+        <div class="template-header" contenteditable="false" style="user-select: none;">
+          ${template.header(lawFirmProfile)}
+        </div>
+        
+        <div class="legal-content" style="line-height: 1.5; text-align: justify; font-size: 12pt; color: black; font-family: 'Times New Roman', serif; min-height: 500px;">
+          ${bodyContent}
+        </div>
+
+        <div class="template-footer" contenteditable="false" style="user-select: none;">
+          ${template.footer(lawFirmProfile, docName)}
+        </div>
+      </div>
+    `;
+  };
+
+  const changeTemplate = (newTemplateKey: string) => {
+    if (!activeDocument) return;
+    
+    setSelectedTemplate(newTemplateKey);
+    
+    // Attempt to extract the existing body content
+    const div = document.createElement('div');
+    div.innerHTML = activeDocument.content;
+    const legalContent = div.querySelector('.legal-content');
+    
+    // Fallback to whole content if .legal-content not found (unlikely but safe)
+    const bodyHtml = legalContent ? legalContent.innerHTML : activeDocument.content;
+    const updatedFullHtml = wrapWithTemplate(bodyHtml, newTemplateKey, activeDocument.name);
+    
+    setActiveDocument({
+      ...activeDocument,
+      content: updatedFullHtml
+    });
+    
+    setToast({ message: `Template diubah ke ${DOCUMENT_TEMPLATES[newTemplateKey as keyof typeof DOCUMENT_TEMPLATES].name}`, type: 'success' });
+    setTimeout(() => setToast(null), 2000);
   };
 
   const handleDocumentEdit = (newContent: string) => {
@@ -238,15 +302,14 @@ export default function App() {
     aiTemperature: 0.7,
     aiCreativity: 'balanced',
     aiPersona: 'professional',
-    neuralDrafting: false,
-    provider: 'gemini' as AIProvider
+    neuralDrafting: false
   });
   const [integrations, setIntegrations] = useState({
-    googleSheets: false,
-    googleCalendar: false,
+    excel: false,
+    outlook: false,
     gmail: false,
-    googleCloud: false,
-    googleDrive: true
+    azure: false,
+    oneDrive: true
   });
   const [lawFirmProfile, setLawFirmProfile] = useState({
     name: 'Lexsia.ai',
@@ -455,7 +518,7 @@ export default function App() {
       let fileToSave = attachedFile ? { ...attachedFile } : null;
       if (fileToSave && getBase64Size(fileToSave.data) > 800000) {
         // If still > 800KB, we don't save the full data to Firestore to avoid crash
-        // but we still send it to AI for this turn
+        // but we still send it to Gemini for this turn
         fileToSave.data = "[Data file terlalu besar untuk disimpan di riwayat chat, namun telah dianalisis]";
       }
 
@@ -474,13 +537,13 @@ export default function App() {
         }).catch(console.error);
       }
 
-      // 2. Get AI response
+      // 2. Get Gemini response
       const history = messages.map(m => ({
         role: (m.role === 'user' ? 'user' : 'model') as 'user' | 'model',
         parts: [{ text: m.content }]
       }));
       
-      const aiResponse = await getAIResponse(settings.provider, userMessage, history, agentMode, attachedFile || undefined, {
+      const aiResponse = await getGeminiResponse(userMessage, history, agentMode, attachedFile || undefined, {
         name: lawFirmProfile.name,
         address: lawFirmProfile.address,
         contact: lawFirmProfile.contact
@@ -554,7 +617,7 @@ export default function App() {
           .replace(/^([A-Za-z\s]+, \d{1,2} [A-Za-z]+ \d{4})$/gm, '<div style="text-align: right; margin-bottom: 20pt;">$1</div>')
           
           // 2. Handle Subject (Perihal)
-          .replace(/^(Perihal\s*:\s*)(.*)$/gm, '<table border="0" cellpadding="0" cellspacing="0" style="margin-bottom: 10pt;"><tr><td width="70" valign="top"><strong>Perihal</strong></td><td width="15" valign="top"><strong>:</strong></td><td valign="top"><strong>$2</strong></td></tr></table>')
+          .replace(/^(Perihal\s*:\s*)(.*)$/gm, '<div style="margin-bottom: 10pt;"><strong>Perihal</strong> : <strong>$2</strong></div>')
           
           // 3. Handle Address Block (Kepada Yth.)
           .replace(/^(Kepada Yth\.)([\s\S]*?)(di\s*–\s*|di\s*-\s*)?(\nTempat|\nJakarta|\n[A-Z][a-z]+)?$/gm, (match, p1, p2, p3, p4) => {
@@ -574,100 +637,57 @@ export default function App() {
           })
 
           // 5. Handle Headings (Standard Markdown)
-          .replace(/^# (.*$)/gm, '<h1 style="font-size: 18pt; text-align: center; font-weight: bold; margin-bottom: 15pt; text-transform: uppercase; font-family: \'Times New Roman\', serif; color: black;">$1</h1>')
-          .replace(/^## (.*$)/gm, '<h2 style="font-size: 14pt; font-weight: bold; margin-top: 15pt; margin-bottom: 10pt; text-transform: uppercase; font-family: \'Times New Roman\', serif; color: black;">$1</h2>')
-          .replace(/^### (.*$)/gm, '<h3 style="font-size: 12pt; font-weight: bold; margin-top: 12pt; margin-bottom: 6pt; font-family: \'Times New Roman\', serif; color: black;">$1</h3>')
+          .replace(/^# (.*$)/gm, '<h1 style="font-size: 18pt; text-align: center; font-weight: bold; margin-bottom: 15pt; text-transform: uppercase;">$1</h1>')
+          .replace(/^## (.*$)/gm, '<h2 style="font-size: 14pt; font-weight: bold; margin-top: 15pt; margin-bottom: 10pt; text-transform: uppercase;">$1</h2>')
+          .replace(/^### (.*$)/gm, '<h3 style="font-size: 12pt; font-weight: bold; margin-top: 12pt; margin-bottom: 6pt;">$1</h3>')
           
-          // 6. Handle Identity Form (Nama :, NIK :, etc. aligned with Colons)
-          .replace(/^([A-Za-z\s\/.\-]+\s*:\s*)(.*($|\n)){1,}/gm, (match) => {
+          // 6. Handle Identity Form (Nama :, NIK :, etc. aligned with hanging indent)
+          .replace(/^(([A-Za-z\s\/.\d\-]+\s*:\s*.*)(\n|$)){1,}/gm, (match) => {
              const rows = match.trim().split('\n');
              if (!rows.some(r => r.includes(':'))) return match;
 
-             let tableLines = '<table border="0" cellpadding="0" cellspacing="0" style="margin-top: 10pt; margin-bottom: 10pt; width: 100%;">';
+             let content = '<div style="margin-top: 10pt; margin-bottom: 10pt;">';
              rows.forEach(row => {
                const colonIndex = row.indexOf(':');
                if (colonIndex !== -1) {
                  const key = row.substring(0, colonIndex).trim();
                  const val = row.substring(colonIndex + 1).trim();
-                 tableLines += `<tr>
-                   <td width="140" valign="top" style="padding: 2px 0;">${key}</td>
-                   <td width="15" valign="top" style="padding: 2px 0;">:</td>
-                   <td valign="top" style="padding: 2px 0; text-align: justify;">${val}</td>
-                 </tr>`;
+                 content += `<p style="padding-left: 120pt; text-indent: -120pt; margin-bottom: 4pt; text-align: justify;"><span style="display: inline-block; width: 110pt; vertical-align: top;">${key}</span><span style="display: inline-block; width: 10pt; text-align: center; vertical-align: top;">:</span>${val}</p>`;
                } else {
-                 tableLines += `<tr><td colspan="3" style="padding: 2px 0;">${row}</td></tr>`;
+                 content += `<p style="margin-bottom: 4pt; text-align: justify;">${row}</p>`;
                }
              });
-             tableLines += '</table>';
-             return tableLines;
+             content += '</div>';
+             return content;
           })
 
-          // 7. Handle Lists (Markdown style) using REAL tables for Word compatibility
+          // 7. Handle Lists (Markdown style) with hanging indents
           .replace(/^\d+\.\s+(.*)$/gm, (match) => {
              const numMatch = match.match(/^\d+\./);
              const num = numMatch ? numMatch[0] : "";
              const text = match.replace(/^\d+\.\s+/, "");
-             return `<table border="0" cellpadding="0" cellspacing="0" style="margin-bottom: 5pt; width: 100%;">
-               <tr>
-                 <td width="25" valign="top" style="padding-top: 2pt;">${num}</td>
-                 <td valign="top" style="text-align: justify;">${text}</td>
-               </tr>
-             </table>`;
+             return `<p style="padding-left: 25pt; text-indent: -25pt; margin-bottom: 5pt; text-align: justify;">${num} ${text}</p>`;
           })
 
-          // 7. Standard Markdown elements
+          // 8. Standard Markdown elements
           .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
           .replace(/\*(.*?)\*/g, '<i>$1</i>')
-          .replace(/---/g, '<hr style="border: 0; border-top: 1px solid black; margin: 15pt 0;"/>')
+          .replace(/^[-*_]{3,}\s*$/gm, '<hr style="border: 0; border-top: 1px solid black; margin: 15pt 0;"/>')
           
-          // 8. Handle Roman Numerals at start of lines (e.g. "I. TERLAPOR")
-          .replace(/^([IVXLC]+\..*)$/gm, '<p><strong>$1</strong></p>')
-
-          // 9. Newlines to breaks (after tables and other blocks)
+          // 9. Smart Title Centering and Structural Elements
+          .replace(/^((?:SURAT|PUTUSAN|PERJANJIAN|KONTRAK|BERITA ACARA|MEMBERI KUASA|PENERIMA KUASA|PEMBERI KUASA)\s+.*)$/gm, '<h1 style="text-align: center; font-weight: bold; margin-bottom: 10pt; text-transform: uppercase;">$1</h1>')
+          .replace(/^(KHUSUS)$/gm, '<h2 style="text-align: center; font-weight: bold; margin-top: 15pt; margin-bottom: 15pt; text-transform: uppercase;">$1</h2>')
+          .replace(/^([IVXLC]+\..*)$/gm, '<p style="margin-top: 10pt; margin-bottom: 5pt;"><strong>$1</strong></p>')
+          
+          // 10. Newlines to breaks (after structural blocks)
           .replace(/\n\n/g, '<br/><br/>')
           .replace(/\n/g, '<br/>');
 
         // Wrap content with professional legal template using TABLES for Word compatibility and Indonesian legal formatting
-        const legalTemplate = `
-          <div class="legal-document-container" style="font-family: 'Times New Roman', Times, serif; color: black; background: white; line-height: 1.5;">
-            <!-- Header / Kop Surat -->
-            <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-bottom: 5px; border-bottom: 3px solid black;">
-              <tr>
-                ${lawFirmProfile.logo ? `<td width="100" align="center" valign="middle" style="padding-bottom: 10px;"><img src="${lawFirmProfile.logo}" style="width: 90px; height: 90px; object-fit: contain;" /></td>` : ''}
-                <td align="center" valign="middle" style="padding-bottom: 10px;">
-                  <h1 style="font-size: 18pt; margin: 0; font-weight: bold; color: black; text-transform: uppercase; letter-spacing: 2px; font-family: 'Times New Roman', serif;">${lawFirmProfile.name}</h1>
-                  <p style="font-size: 10pt; margin: 2px 0; color: #000; font-family: 'Times New Roman', serif;">${lawFirmProfile.address}</p>
-                  <p style="font-size: 10pt; margin: 2px 0; color: #000; font-family: 'Times New Roman', serif;">Telp/Kontak: ${lawFirmProfile.contact}</p>
-                </td>
-              </tr>
-            </table>
-            <div style="border-bottom: 1px solid black; margin-bottom: 30px; margin-top: 2px;"></div>
-            
-            <!-- Isi Dokumen -->
-            <div class="legal-content" style="line-height: 1.5; text-align: justify; font-size: 12pt; color: black; font-family: 'Times New Roman', serif;">
-              ${formattedContent}
-            </div>
-
-            <!-- Footer / Page Info -->
-            <div style="margin-top: 50px; padding-top: 5px; border-top: 1px solid #000;">
-              <table width="100%" border="0" cellspacing="0" cellpadding="0">
-                <tr>
-                  <td align="left" style="font-size: 9pt; color: #333; font-style: italic; font-family: 'Times New Roman', serif;">
-                    ${lawFirmProfile.name} &bull; ${docName}
-                  </td>
-                  <td align="right" style="font-size: 9pt; font-weight: bold; color: #000; font-family: 'Times New Roman', serif;">
-                    Halaman 1
-                  </td>
-                </tr>
-              </table>
-            </div>
-          </div>
-        `;
-
         const newDoc = {
           id: Math.random().toString(36).substr(2, 9),
           name: docName,
-          content: legalTemplate
+          content: wrapWithTemplate(formattedContent, selectedTemplate, docName)
         };
         setActiveDocument(newDoc);
         setIsSplitView(true);
@@ -676,7 +696,7 @@ export default function App() {
         generatedDocFile = {
           name: docName + (docName.toLowerCase().endsWith('.docx') ? '' : '.docx'),
           type: 'application/vnd.google-apps.document',
-          data: legalTemplate 
+          data: newDoc.content
         };
       }
 
@@ -733,7 +753,7 @@ export default function App() {
                data: `data:text/plain;base64,${base64Text}`
              });
              
-             // Auto-save to Google Drive
+             // Auto-save to OneDrive
              handleAutoUpload({
                length: 1,
                item: (i: number) => i === 0 ? file : null,
@@ -775,7 +795,7 @@ export default function App() {
            data: fileData
          });
          
-         // Auto-save to Google Drive
+         // Auto-save to OneDrive
          handleAutoUpload({
            length: 1,
            item: (i: number) => i === 0 ? file : null,
@@ -903,7 +923,7 @@ export default function App() {
       // Enhance current input
       setIsEnhancing(true);
       try {
-        const enhanced = await enhancePrompt(settings.provider, input.trim());
+        const enhanced = await enhancePrompt(input.trim());
         setInput(enhanced);
         setError("Prompt Anda telah ditingkatkan untuk hasil yang lebih presisi.");
         setTimeout(() => setError(null), 3000);
@@ -983,9 +1003,9 @@ export default function App() {
     }
   };
 
-  const connectGoogleDrive = () => {
-    const clientId = import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_ID;
-    const apiKey = import.meta.env.VITE_GOOGLE_DRIVE_API_KEY;
+  const connectOneDrive = () => {
+    const clientId = import.meta.env.VITE_ONEDRIVE_CLIENT_ID;
+    const apiKey = import.meta.env.VITE_ONEDRIVE_API_KEY;
 
     if (!clientId || !apiKey) {
       setShowDriveSetup(true);
@@ -995,7 +1015,7 @@ export default function App() {
     }
     
     setToast({ 
-      message: "Fitur Google Drive telah dikonfigurasi. Memuat picker...", 
+      message: "Fitur OneDrive telah dikonfigurasi. Memuat picker...", 
       type: 'info' 
     });
     setShowConnectMenu(false);
@@ -1018,7 +1038,7 @@ export default function App() {
     }, 1500);
   };
 
-  const openInGoogleDocs = (fileName: string, content?: string) => {
+  const openInWord = (fileName: string, content?: string) => {
     if (content) {
       // Create a temporary element to copy rich text
       const tempDiv = document.createElement('div');
@@ -1035,35 +1055,68 @@ export default function App() {
       
       try {
         document.execCommand('copy');
-        setToast({ message: `Draf "${fileName}" telah disalin sebagai format kaya. Menyiapkan Google Docs...`, type: 'info' });
+        setToast({ message: `Draf "${fileName}" telah disalin sebagai format kaya. Menyiapkan Aplikasi Word...`, type: 'info' });
       } catch (err) {
         navigator.clipboard.writeText(tempDiv.innerText);
-        setToast({ message: `Draf "${fileName}" telah disalin sebagai teks biasa. Menyiapkan Google Docs...`, type: 'info' });
+        setToast({ message: `Draf "${fileName}" telah disalin sebagai teks biasa. Menyiapkan Aplikasi Word...`, type: 'info' });
       }
       
       document.body.removeChild(tempDiv);
       selection?.removeAllRanges();
     } else {
-      setToast({ message: `Menyiapkan "${fileName}" untuk Google Docs...`, type: 'info' });
+      setToast({ message: `Menyiapkan "${fileName}" untuk Aplikasi Word...`, type: 'info' });
     }
     
     setTimeout(() => {
-      window.open('https://docs.google.com/document/u/0/create', '_blank');
-      setToast({ message: "Gunakan 'Paste' (Ctrl+V) di Google Docs. Format hukum Anda akan tetap terjaga.", type: 'success' });
+      // Use web-based Word as primary reliable method
+      window.open('https://office.live.com/start/Word.aspx', '_blank');
+      setToast({ message: "Gunakan 'Paste' (Ctrl+V) di Aplikasi Word. Format hukum Anda akan tetap terjaga.", type: 'success' });
+      
       setTimeout(() => setToast(null), 5000);
     }, 1200);
   };
 
-  const simulateSaveToDrive = (fileName: string, content: string) => {
-    const clientId = import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_ID;
-    const apiKey = import.meta.env.VITE_GOOGLE_DRIVE_API_KEY;
+  const downloadAsDocx = async (fileName: string, content: string) => {
+    try {
+      setToast({ message: `Menyiapkan draf "${fileName}" untuk diunduh...`, type: 'info' });
+      
+      // Add standard legal styling for Word
+      const fullHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: 'Times New Roman', serif; line-height: 1.5; padding: 20px; }
+            h1, h2, h3 { text-align: center; text-transform: uppercase; }
+          </style>
+        </head>
+        <body>
+          ${content}
+        </body>
+        </html>
+      `;
+      
+      const blobResult = await asBlob(fullHtml);
+      const blob = blobResult instanceof Blob ? blobResult : new Blob([blobResult], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+      saveAs(blob, fileName.endsWith('.docx') ? fileName : `${fileName}.docx`);
+      setToast({ message: `Draf "${fileName}" berhasil diunduh. Silakan buka file tersebut untuk menjalankan Aplikasi Word di PC Anda.`, type: 'success' });
+    } catch (err) {
+      console.error('Failed to download docx:', err);
+      setToast({ message: "Gagal mengunduh format DOCX. Silakan gunakan fitur 'Salin' (Buka di Aplikasi Word) sebagai alternatif.", type: 'error' });
+    }
+  };
+
+  const simulateSaveToOneDrive = (fileName: string, content: string) => {
+    const clientId = import.meta.env.VITE_ONEDRIVE_CLIENT_ID;
+    const apiKey = import.meta.env.VITE_ONEDRIVE_API_KEY;
 
     if (!clientId || !apiKey) {
       setShowDriveSetup(true);
       return;
     }
 
-    setToast({ message: `Menyimpan "${fileName}" ke Google Drive...`, type: 'info' });
+    setToast({ message: `Menyimpan "${fileName}" ke OneDrive...`, type: 'info' });
     
     setTimeout(() => {
       const newHistoryItem: UploadHistoryItem = {
@@ -1071,11 +1124,11 @@ export default function App() {
         name: fileName.endsWith('.docx') || fileName.endsWith('.pdf') ? fileName : `${fileName}.docx`,
         size: formatFileSize(content.length), // Estimated size
         date: 'Baru saja',
-        url: 'https://docs.google.com/document/u/0/',
-        type: 'application/vnd.google-apps.document'
+        url: 'https://onedrive.live.com/',
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
       };
       setUploadHistory(prev => [newHistoryItem, ...prev]);
-      setToast({ message: `Berhasil disimpan ke Google Drive dalam folder "Lexsia AI".`, type: 'success' });
+      setToast({ message: `Berhasil disimpan ke OneDrive dalam folder "Lexsia AI".`, type: 'success' });
       setTimeout(() => setToast(null), 3000);
     }, 2000);
   };
@@ -1138,7 +1191,7 @@ export default function App() {
               <div className="flex items-center gap-4 py-4 sm:py-0 border-t sm:border-t-0 sm:border-l border-heritage-ink/10 sm:pl-8">
                 <div className="flex -space-x-4">
                   {[1, 2, 3].map(i => (
-                    <div key={i} className="w-10 h-10 rounded-full border-2 border-heritage-bone overflow-hidden bg-heritage-gold/20">
+                    <div key={`avatar-${i}`} className="w-10 h-10 rounded-full border-2 border-heritage-bone overflow-hidden bg-heritage-gold/20">
                       <img src={`https://picsum.photos/seed/lawyer${i}/100/100`} alt="" referrerPolicy="no-referrer" />
                     </div>
                   ))}
@@ -1208,7 +1261,7 @@ export default function App() {
                   }
                 ].map((item, i) => (
                   <motion.div 
-                    key={i}
+                    key={`feat-${i}`}
                     initial={{ opacity: 0, y: 20 }}
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
@@ -1409,9 +1462,9 @@ export default function App() {
                   </button>
                 )}
               </div>
-              {chats.map((chat) => (
+              {chats.map((chat, i) => (
                 <div 
-                  key={chat.id}
+                  key={`chat-${chat.id}-${i}`}
                   onClick={() => {
                     setActiveChat(chat.id);
                     if (window.innerWidth < 1024) setSidebarOpen(false);
@@ -1654,7 +1707,7 @@ export default function App() {
                         { id: 'datacenter', label: 'Keamanan', icon: Database },
                       ].map((tab) => (
                         <button 
-                          key={tab.id}
+                          key={`tab-${tab.id}`}
                           onClick={() => setSettingsTab(tab.id as any)}
                           className={cn(
                             "flex items-center gap-3 px-4 py-3 rounded-none text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap",
@@ -1715,7 +1768,7 @@ export default function App() {
                              <div>
                                 <h4 className="text-xl font-serif font-bold text-heritage-ink mb-1">Pusat Hukum & Digital Library</h4>
                                 <p className="text-xs font-medium text-heritage-ink/60 leading-relaxed">
-                                   Unggah dokumen hukum Anda (PDF, DOCX, Putusan) untuk dianalisis oleh AI dan disimpan ke Google Drive.
+                                   Unggah dokumen hukum Anda (PDF, DOCX, Putusan) untuk dianalisis oleh AI dan disimpan ke OneDrive.
                                 </p>
                              </div>
                           </div>
@@ -1744,7 +1797,7 @@ export default function App() {
                              <div className="space-y-2">
                                 {uploadHistory.map((doc, i) => (
                                   <div 
-                                    key={doc.id} 
+                                    key={`doc-${doc.id}`} 
                                     onClick={() => window.open(doc.url, '_blank')}
                                     className="flex items-center justify-between p-4 bg-white border border-heritage-ink/5 shadow-sm cursor-pointer hover:border-heritage-gold hover:shadow-md transition-all group/item"
                                   >
@@ -1798,7 +1851,7 @@ export default function App() {
                               <div className="grid grid-cols-2 gap-2 p-1 bg-heritage-ink/5 border border-heritage-ink/5">
                                 {['Formal', 'Praktis'].map((t) => (
                                   <button 
-                                    key={t}
+                                    key={`tone-${t}`}
                                     onClick={() => setSettings({...settings, legalTone: t.toLowerCase()})}
                                     className={cn(
                                       "py-3 rounded-none text-[10px] font-black uppercase tracking-widest transition-all",
@@ -1819,7 +1872,7 @@ export default function App() {
                               <div className="space-y-2">
                                 {['Standar', 'Senior Associate', 'Managing Partner'].map((l) => (
                                   <button 
-                                    key={l}
+                                    key={`exp-${l}`}
                                     onClick={() => setSettings({...settings, expertLevel: l.toLowerCase()})}
                                     className={cn(
                                       "w-full flex items-center justify-between p-4 rounded-none text-[10px] font-black uppercase tracking-widest transition-all border",
@@ -1928,7 +1981,7 @@ export default function App() {
                              <div>
                                 <h4 className="text-xl font-serif font-bold text-heritage-ink mb-2">Cloud Storage & Privacy</h4>
                                 <p className="text-xs font-medium text-heritage-ink/60 leading-relaxed mb-4">
-                                   Data Anda disimpan di server terenkripsi Google Cloud Platform (Regio: asia-southeast1). Lexsia tidak memiliki akses langsung ke konten dokumen Anda tanpa izin eksplisit melalui integrasi OAuth.
+                                   Data Anda disimpan di server terenkripsi Azure/Cloud Storage. Lexsia tidak memiliki akses langsung ke konten dokumen Anda tanpa izin eksplisit melalui integrasi OAuth Office.
                                 </p>
                                 <div className="flex gap-4">
                                    <div className="flex items-center gap-2 px-3 py-1 bg-heritage-gold/10 rounded-none border border-heritage-gold/20">
@@ -1949,7 +2002,7 @@ export default function App() {
                                { label: 'Uptime', value: '99.9%', icon: CheckCircle },
                                { label: 'Last Backup', value: 'Today, 04:20 AM', icon: History }
                              ].map((stat, i) => (
-                               <div key={i} className="p-5 rounded-none bg-heritage-ink/5 border border-heritage-ink/5">
+                               <div key={`stat-${i}`} className="p-5 rounded-none bg-heritage-ink/5 border border-heritage-ink/5">
                                   <stat.icon className="w-5 h-5 text-heritage-ink/40 mb-3" />
                                   <p className="text-[9px] font-black text-heritage-ink/40 uppercase tracking-widest mb-1">{stat.label}</p>
                                   <p className="text-xs font-bold text-heritage-ink">{stat.value}</p>
@@ -1972,32 +2025,6 @@ export default function App() {
                           exit={{ opacity: 0, x: -10 }}
                           className="space-y-10"
                         >
-                          {/* AI Provider Selection */}
-                          <div>
-                            <label className="text-[10px] uppercase tracking-widest font-black text-heritage-ink/40 mb-4 block">AI Intelligence Provider</label>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                              {[
-                                { id: 'gemini', name: 'Google Gemini', desc: 'Fast & Versatile' },
-                                { id: 'claude', name: 'Anthropic Claude', desc: 'Nuanced & Precise' },
-                                { id: 'openai', name: 'OpenAI GPT-4o', desc: 'Powerful & Logical' }
-                              ].map((p) => (
-                                <button 
-                                  key={p.id}
-                                  onClick={() => setSettings({...settings, provider: p.id as AIProvider})}
-                                  className={cn(
-                                    "flex flex-col items-start p-4 border transition-all rounded-none",
-                                    settings.provider === p.id 
-                                      ? "bg-heritage-gold border-heritage-gold shadow-lg" 
-                                      : "bg-heritage-bone border-heritage-ink/10 hover:bg-white text-heritage-ink/40"
-                                  )}
-                                >
-                                  <span className={cn("text-[11px] font-black uppercase tracking-tight mb-1", settings.provider === p.id ? "text-heritage-ink" : "text-heritage-ink/60")}>{p.name}</span>
-                                  <span className={cn("text-[8px] font-bold uppercase", settings.provider === p.id ? "text-heritage-ink/60" : "text-heritage-ink/30")}>{p.desc}</span>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                             <div className="space-y-8">
                                <div>
@@ -2025,7 +2052,7 @@ export default function App() {
                                   <div className="grid grid-cols-3 gap-2">
                                     {['Strict', 'Balanced', 'Deep'].map((m) => (
                                       <button 
-                                        key={m}
+                                        key={`crea-${m}`}
                                         onClick={() => setSettings({...settings, aiCreativity: m.toLowerCase()})}
                                         className={cn(
                                           "py-3 rounded-none text-[10px] font-black tracking-widest uppercase transition-all border",
@@ -2051,7 +2078,7 @@ export default function App() {
                                        { id: 'litigation', label: 'Litigation Expert', icon: Gavel }
                                      ].map((p) => (
                                        <button 
-                                          key={p.id}
+                                          key={`persona-${p.id}`}
                                           onClick={() => setSettings({...settings, aiPersona: p.id})}
                                           className={cn(
                                             "w-full flex items-center gap-4 p-4 rounded-none text-[10px] font-black tracking-widest uppercase transition-all border",
@@ -2108,38 +2135,34 @@ export default function App() {
                           className="space-y-6"
                         >
                           <p className="text-sm text-slate-400 mb-8 leading-relaxed">
-                            Hubungkan Lexsia ke ekosistem Google Anda untuk sinkronisasi dokumen, jadwal sidang, dan analisis data hukum secara real-time.
+                            Hubungkan Lexsia ke ekosistem Microsoft Office Anda untuk sinkronisasi dokumen, jadwal sidang, dan analisis data hukum secara real-time.
                           </p>
 
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                              {[
-                               { id: 'googleDrive', name: 'Google Drive', desc: 'Simpan & Kelola dokumen', icon: '/google-drive.svg', connected: integrations.googleDrive },
-                               { id: 'gmail', name: 'Gmail', desc: 'Analisis korespondensi hukum', icon: '/gmail.svg', connected: integrations.gmail },
-                               { id: 'googleSheets', name: 'Google Sheets', desc: 'Export billing & analisis data', icon: '/sheets.svg', connected: integrations.googleSheets },
-                               { id: 'googleCalendar', name: 'Google Calendar', desc: 'Sinkronisasi jadwal sidang', icon: '/calendar.svg', connected: integrations.googleCalendar },
-                               { id: 'googleCloud', name: 'Google Cloud (BigQuery)', desc: 'Analisis Big Data yurisprudensi', icon: '/gcp.svg', connected: integrations.googleCloud },
-                               { id: 'googleKeep', name: 'Google Keep', desc: 'Sinkronisasi catatan riset', icon: '/keep.svg', connected: false }
-                             ].map((item) => (
+                               { id: 'oneDrive', name: 'OneDrive', desc: 'Simpan & Kelola dokumen', icon: '/onedrive.svg', connected: integrations.oneDrive },
+                               { id: 'gmail', name: 'Outlook', desc: 'Analisis korespondensi hukum', icon: '/outlook.svg', connected: integrations.gmail },
+                               { id: 'excel', name: 'Office Excel', desc: 'Export billing & analisis data', icon: '/excel.svg', connected: integrations.excel },
+                               { id: 'outlook', name: 'Office Calendar', desc: 'Sinkronisasi jadwal sidang', icon: '/calendar-ms.svg', connected: integrations.outlook },
+                               { id: 'azure', name: 'Azure Cloud', desc: 'Analisis Big Data yurisprudensi', icon: '/azure.svg', connected: integrations.azure },
+                               { id: 'googleKeep', name: 'OneNote', desc: 'Sinkronisasi catatan riset', icon: '/onenote.svg', connected: false }
+                              ].map((item) => (
                                <div 
-                                 key={item.id}
+                                 key={`int-${item.id}`}
                                  className="flex items-center gap-4 p-5 bg-heritage-bone rounded-none border border-heritage-ink/10 hover:bg-white transition-all group"
                                >
                                   <div className="w-12 h-12 rounded-none bg-heritage-ink flex items-center justify-center border border-heritage-gold/20 shrink-0">
-                                     {item.id === 'googleDrive' ? (
-                                       <svg viewBox="0 0 24 24" className="w-7 h-7">
-                                          <path fill="#0066da" d="m14 16h4l-2 3z"/>
-                                          <path fill="#00ac47" d="m11 16-2-3h4z"/>
-                                          <path fill="#ffba00" d="m7 16-2 3h4z"/>
-                                          <path fill="#0066da" d="m18 14-3-5 6 10z"/>
-                                          <path fill="#00ac47" d="m9 5 3 5-6 10z"/>
-                                          <path fill="#ffba00" d="m15 5h-6l3 5z"/>
+                                     {item.id === 'oneDrive' ? (
+                                       <svg viewBox="0 0 24 24" className="w-7 h-7" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                          <path d="M17.5 19C15.01 19 13 16.99 13 14.5C13 13.41 13.39 12.41 14.04 11.64C13.71 11.55 13.36 11.5 13 11.5C10.51 11.5 8.5 13.51 8.5 16C8.5 18.49 10.51 20.5 13 20.5H17.5C19.99 20.5 22 18.49 22 16C22 13.51 19.99 11.5 17.5 11.5C17.14 11.5 16.79 11.55 16.46 11.64C17.11 12.41 17.5 13.41 17.5 14.5V19Z" fill="#0078D4"/>
+                                          <path d="M6.5 19H13V14.5C13 11.46 15.46 9 18.5 9C19.12 9 19.72 9.1 20.28 9.29C19.34 6.74 16.89 5 14 5C10.61 5 7.74 7.37 7.12 10.5C4.24 11.08 2 13.59 2 16.5C2 19.53 4.47 22 7.5 22H13V19H7.5C6.95 19 6.5 18.55 6.5 18V19Z" fill="#00A4EF"/>
                                        </svg>
-                                     ) : item.id === 'googleSheets' ? (
-                                       <TableIcon className="w-7 h-7 text-green-500" />
-                                     ) : item.id === 'googleCalendar' ? (
-                                       <History className="w-7 h-7 text-blue-400" />
+                                     ) : item.id === 'excel' ? (
+                                       <TableIcon className="w-7 h-7 text-green-600" />
+                                     ) : item.id === 'outlook' ? (
+                                       <Calendar className="w-7 h-7 text-blue-500" />
                                      ) : item.id === 'gmail' ? (
-                                       <MessageSquare className="w-7 h-7 text-red-500" />
+                                       <Mail className="w-7 h-7 text-blue-600" />
                                      ) : (
                                        <div className="w-7 h-7 rounded-full bg-slate-700/50 flex items-center justify-center">
                                           <Cloud className="w-4 h-4 text-slate-400" />
@@ -2152,7 +2175,7 @@ export default function App() {
                                   </div>
                                   <button 
                                     onClick={() => {
-                                       if (item.id === 'googleDrive') return; 
+                                       if (item.id === 'oneDrive') return; 
                                        const key = item.id as keyof typeof integrations;
                                        setIntegrations({...integrations, [key]: !integrations[key]});
                                        setToast({ 
@@ -2177,7 +2200,7 @@ export default function App() {
                           <div className="mt-4 p-4 rounded-xl bg-orange-500/5 border border-orange-500/20 flex gap-3 items-center">
                              <Shield className="w-5 h-5 text-orange-500" />
                              <p className="text-[10px] text-slate-400">
-                                Lexsia menggunakan OAuth 2.0 yang aman. Kami tidak menyimpan kata sandi Google Anda. Akses dibatasi pada metadata dokumen untuk keperluan analisis hukum.
+                                Lexsia menggunakan OAuth 2.0 yang aman. Kami tidak menyimpan kata sandi Microsoft Anda. Akses dibatasi pada metadata dokumen untuk keperluan analisis hukum.
                              </p>
                           </div>
                         </motion.div>
@@ -2403,7 +2426,7 @@ export default function App() {
                   "Ketentuan Perbuatan Melawan Hukum (Pasal 1365 KUHPer)."
                 ].map((suggestion, i) => (
                   <motion.button 
-                    key={i}
+                    key={`sug-${i}`}
                     variants={{
                       hidden: { opacity: 0, x: 50 },
                       visible: { 
@@ -2429,7 +2452,7 @@ export default function App() {
             <div className="max-w-4xl mx-auto w-full space-y-12">
               {messages.map((m, i) => (
                 <motion.div 
-                  key={m.id || i}
+                  key={`msg-${m.id || i}-${i}`}
                   initial={{ opacity: 0, x: m.role === 'user' ? 20 : -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   className={cn(
@@ -2500,7 +2523,7 @@ export default function App() {
                           <div className="flex-1 text-center sm:text-left min-w-0">
                             <h4 className="text-sm font-bold text-white truncate">{m.file.name}</h4>
                             <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">
-                              {m.file.type === 'application/vnd.google-apps.document' ? 'Google Doc' : 'Dokumen • DOCX'}
+                              {m.file.type === 'application/vnd.google-apps.document' ? 'Aplikasi Word' : 'Dokumen • DOCX'}
                             </p>
                           </div>
 
@@ -2508,18 +2531,28 @@ export default function App() {
                              <button 
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  if (m.file) simulateSaveToDrive(m.file.name, m.file.data);
+                                  if (m.file) simulateSaveToOneDrive(m.file.name, m.file.data);
                                 }}
                                 className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-slate-400 hover:text-green-400 hover:bg-green-500/10 transition-all"
-                                title="Simpan ke Drive"
+                                title="Simpan ke OneDrive"
                              >
                                 <Cloud className="w-5 h-5" />
                              </button>
                              <button 
                                 onClick={(e) => {
                                   e.stopPropagation();
+                                  if (m.file) downloadAsDocx(m.file.name, m.file.data);
+                                }}
+                                className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all"
+                                title="Unduh .docx ke PC"
+                             >
+                                <Download className="w-5 h-5" />
+                             </button>
+                             <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   if (m.file?.type === 'application/vnd.google-apps.document') {
-                                    openInGoogleDocs(m.file.name, m.file.data);
+                                    openInWord(m.file.name, m.file.data);
                                   } else {
                                      // Fallback for non-google docs
                                      setActiveDocument({
@@ -2533,7 +2566,7 @@ export default function App() {
                                 className="flex items-center gap-2 px-5 py-2.5 rounded-none bg-heritage-ink border border-heritage-gold/30 text-heritage-gold text-xs font-black uppercase tracking-widest hover:bg-heritage-gold hover:text-heritage-ink transition-all whitespace-nowrap"
                              >
                                 {m.file?.type === 'application/vnd.google-apps.document' ? (
-                                   <><ExternalLink className="w-4 h-4" /> Buka di Google Docs</>
+                                    <><ExternalLink className="w-4 h-4" /> Buka di Aplikasi Word</>
                                 ) : (
                                    <><Laptop className="w-4 h-4" /> Buka dengan Word</>
                                 )}
@@ -2562,7 +2595,7 @@ export default function App() {
                   <div className="bg-white/5 border border-white/10 rounded-[2rem] rounded-tl-none p-6 shadow-2xl backdrop-blur-xl">
                     <div className="flex gap-2 items-center">
                       {[0, 1, 2].map(dot => (
-                        <span key={dot} className="w-2 h-2 bg-heritage-gold rounded-full animate-bounce" style={{ animationDelay: `${dot * 0.15}s` }}></span>
+                        <span key={`dot-${dot}`} className="w-2 h-2 bg-heritage-gold rounded-full animate-bounce" style={{ animationDelay: `${dot * 0.15}s` }}></span>
                       ))}
                     </div>
                   </div>
@@ -2670,7 +2703,7 @@ export default function App() {
                     <Plus className={cn("w-5 h-5 transition-transform duration-200", showPlusMenu && "rotate-45")} />
                   </button>
                   
-                  <AnimatePresence>
+                   <AnimatePresence>
                     {showPlusMenu && (
                       <motion.div 
                         initial={{ opacity: 0, y: -10, scale: 0.95 }}
@@ -2716,24 +2749,53 @@ export default function App() {
                                <div className="flex items-center gap-4">
                                   <Book className="w-5 h-5 text-heritage-ink/40 group-hover:text-heritage-gold" />
                                   <span className="text-[10px] font-black uppercase tracking-widest text-heritage-ink">Playbooks</span>
-                               </div>
-                               <ExternalLink className="w-4 h-4 text-heritage-ink/20 group-hover:text-heritage-ink/60" />
+                                </div>
+                                <ExternalLink className="w-4 h-4 text-heritage-ink/20 group-hover:text-heritage-ink/60" />
                             </button>
 
                             {/* Prompts */}
-                            <button 
-                              onClick={() => {
-                                setInput("Berikan draf surat kuasa untuk perkara perdata dengan detail sebagai berikut: ");
-                                setShowPlusMenu(false);
-                              }}
-                              className="w-full flex items-center justify-between p-4 hover:bg-heritage-bone rounded-none transition-all group"
-                            >
-                               <div className="flex items-center gap-4">
-                                  <MessageSquare className="w-5 h-5 text-heritage-ink/40 group-hover:text-heritage-gold" />
-                                  <span className="text-[10px] font-black uppercase tracking-widest text-heritage-ink">Templat Prompt</span>
-                               </div>
-                               <ChevronRight className="w-4 h-4 text-heritage-ink/20 group-hover:text-heritage-ink/60" />
-                            </button>
+                            <div className="relative">
+                              <button 
+                                onClick={() => setShowPromptSubmenu(!showPromptSubmenu)}
+                                className={cn(
+                                  "w-full flex items-center justify-between p-4 hover:bg-heritage-bone rounded-none transition-all group",
+                                  showPromptSubmenu && "bg-heritage-bone"
+                                )}
+                              >
+                                 <div className="flex items-center gap-4">
+                                    <MessageSquare className="w-5 h-5 text-heritage-ink/40 group-hover:text-heritage-gold" />
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-heritage-ink">Templat Prompt</span>
+                                 </div>
+                                 <ChevronRight className={cn("w-4 h-4 text-heritage-ink/20 group-hover:text-heritage-ink/60 transition-transform text-heritage-gold", showPromptSubmenu && "rotate-90")} />
+                              </button>
+
+                              <AnimatePresence>
+                                {showPromptSubmenu && (
+                                  <motion.div 
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: "auto" }}
+                                    exit={{ opacity: 0, height: 0 }}
+                                    className="bg-heritage-bone overflow-hidden"
+                                  >
+                                     <div className="flex flex-col divide-y divide-heritage-ink/5 max-h-60 overflow-y-auto custom-scrollbar border-y border-heritage-ink/5">
+                                        {PROMPT_TEMPLATES.map((tmpl, idx) => (
+                                          <button 
+                                            key={`prompt-${idx}`}
+                                            onClick={() => {
+                                              setInput(tmpl.content);
+                                              setShowPlusMenu(false);
+                                              setShowPromptSubmenu(false);
+                                            }}
+                                            className="w-full text-left p-4 pl-12 hover:bg-heritage-ink hover:text-heritage-gold text-[9px] font-black uppercase tracking-widest text-heritage-ink/60 transition-all border-l-2 border-transparent hover:border-heritage-gold"
+                                          >
+                                            {tmpl.title}
+                                          </button>
+                                        ))}
+                                     </div>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
 
                             {/* Language */}
                             <div className="flex items-center justify-between p-4 bg-heritage-bone/50 blur-[0.5px]">
@@ -2838,13 +2900,13 @@ export default function App() {
                                 Local Computer
                              </button>
                              <button 
-                               onClick={connectGoogleDrive}
+                               onClick={connectOneDrive}
                                className="w-full flex items-center gap-3 p-3 text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all text-xs font-semibold"
                              >
                                 <div className="w-8 h-8 rounded-lg bg-green-600/20 text-green-400 flex items-center justify-center">
                                    <Cloud className="w-4 h-4" />
                                 </div>
-                                Google Drive
+                                OneDrive
                              </button>
                              <button 
                                onClick={() => { startCamera(); setShowConnectMenu(false); }}
@@ -2895,7 +2957,7 @@ export default function App() {
                     </div>
                     
                     <div className="flex items-center gap-0.5 shrink-0">
-                       {/* AI Icon */}
+                       {/* AI / Gemini Icon */}
                        <button 
                           onClick={() => {
                             setToast({ message: "Lexsia AI sedang menganalisis dokumen...", type: 'info' });
@@ -2907,11 +2969,11 @@ export default function App() {
                           <Sparkles className="w-4 h-4 group-hover:animate-pulse" />
                        </button>
 
-                       {/* Google Drive Icon/Button */}
+                       {/* OneDrive Icon/Button */}
                        <button 
-                          onClick={() => activeDocument && simulateSaveToDrive(activeDocument.name, activeDocument.content)}
+                          onClick={() => activeDocument && simulateSaveToOneDrive(activeDocument.name, activeDocument.content)}
                           className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-slate-100 transition-colors group"
-                          title="Simpan ke Drive"
+                          title="Simpan ke OneDrive"
                        >
                           <svg viewBox="0 0 24 24" className="w-4 h-4">
                             <path fill="#0066da" d="m14 16h4l-2 3z"/>
@@ -2945,6 +3007,13 @@ export default function App() {
                           <RotateCcw className="w-4 h-4" />
                        </button>
 
+                       <button 
+                         onClick={() => activeDocument && openInWord(activeDocument.name, activeDocument.content)}
+                         className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-blue-50 transition-colors text-blue-600"
+                         title="Buka di Word Desktop PC"
+                       >
+                         <Laptop className="w-4 h-4" />
+                       </button>
                        <div className="w-px h-4 bg-slate-200 mx-0.5"></div>
 
                        <button 
@@ -2963,6 +3032,22 @@ export default function App() {
                        <div className="flex items-center gap-0.5 pr-1.5 border-r border-slate-200">
                           <button onClick={() => applyFormat('undo')} className="p-1 hover:bg-slate-200 rounded text-slate-600" title="Urungkan"><Undo className="w-3.5 h-3.5" /></button>
                           <button onClick={() => applyFormat('redo')} className="p-1 hover:bg-slate-200 rounded text-slate-600" title="Ulangi"><Redo className="w-3.5 h-3.5" /></button>
+                       </div>
+
+                       {/* Template Selector */}
+                       <div className="flex items-center gap-2 px-2 border-r border-slate-200">
+                          <div className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded transition-colors group">
+                             <Type className="w-3 h-3 text-slate-400 group-hover:text-blue-500 transition-colors" />
+                             <select 
+                               value={selectedTemplate}
+                               onChange={(e) => changeTemplate(e.target.value)}
+                               className="bg-transparent text-[10px] font-bold cursor-pointer text-slate-600 focus:outline-none min-w-[90px]"
+                             >
+                                {Object.entries(DOCUMENT_TEMPLATES).map(([key, template]) => (
+                                  <option key={`tpl-${key}`} value={key}>{template.name}</option>
+                                ))}
+                             </select>
+                          </div>
                        </div>
                        
                        <div className="flex items-center gap-0.5 px-1.5 border-r border-slate-200">
@@ -3040,19 +3125,20 @@ export default function App() {
                               <div className="prose prose-slate prose-sm max-w-none font-serif">
                                  {activeDocument && idx === 0 ? (
                                     <div 
+                                       key={activeDocument.id}
                                        ref={editorRef}
                                        contentEditable="true"
                                        onInput={(e) => handleDocumentEdit(e.currentTarget.innerHTML)}
                                        className="w-full h-auto bg-transparent border-none focus:outline-none focus:ring-0 p-0 resize-none font-serif text-slate-900 leading-relaxed text-justify editor-content"
                                        spellCheck="false"
-                                       dangerouslySetInnerHTML={{ __html: activeDocument.content }}
+                                       suppressContentEditableWarning={true}
                                     />
                                  ) : activeDocument ? (
                                     /* Placeholder for following pages if content overflowed */
                                     <div className="opacity-[0.05] pointer-events-none select-none italic text-slate-800">
                                        <p className="mb-4">Konten berlanjut dari halaman sebelumnya...</p>
                                        {Array.from({ length: 15 }).map((_, l) => (
-                                          <div key={l} className="h-4 bg-slate-200 rounded w-full mb-3"></div>
+                                          <div key={`load-${l}`} className="h-4 bg-slate-200 rounded w-full mb-3"></div>
                                        ))}
                                     </div>
                                  ) : (
@@ -3089,7 +3175,7 @@ export default function App() {
         </div>
       </main>
       
-      {/* Google Drive Setup Guidelines Modal */}
+      {/* OneDrive Setup Guidelines Modal */}
       <AnimatePresence>
         {showDriveSetup && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -3113,7 +3199,7 @@ export default function App() {
                       <Cloud className="w-6 h-6" />
                     </div>
                     <div>
-                      <h2 className="text-xl font-bold text-white">Setup Google Drive</h2>
+                      <h2 className="text-xl font-bold text-white">Setup OneDrive Integration</h2>
                       <p className="text-xs text-slate-400 font-medium tracking-tight">KONEKSI API DIPERLUKAN</p>
                     </div>
                   </div>
@@ -3131,26 +3217,26 @@ export default function App() {
                        <CheckCircle className="w-4 h-4" /> 
                        Panduan Aktivasi Fitur:
                     </p>
-                    Fitur ini memerlukan konfigurasi API dari Google Cloud Cloud Console. Ikuti langkah protokol berikut untuk mengaktifkannya.
+                    Fitur ini memerlukan konfigurasi API dari Microsoft Azure Portal. Ikuti langkah protokol berikut untuk mengaktifkannya.
                   </div>
 
                   <div className="space-y-4">
                     <div className="flex gap-4">
                   <div className="w-6 h-6 rounded-none bg-heritage-ink text-heritage-gold text-[10px] font-bold flex items-center justify-center shrink-0 border border-heritage-gold/20">1</div>
                       <div className="text-sm text-slate-300">
-                        Buka <a href="https://console.cloud.google.com/" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">Google Cloud Console</a> dan buat proyek baru.
+                        Buka <a href="https://portal.azure.com/" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">Azure Portal</a> dan buat proyek baru.
                       </div>
                     </div>
                     <div className="flex gap-4">
                       <div className="w-6 h-6 rounded-none bg-heritage-ink text-heritage-gold text-[10px] font-bold flex items-center justify-center shrink-0 border border-heritage-gold/20">2</div>
                       <div className="text-sm text-slate-300">
-                        Aktifkan <strong>Google Drive API</strong> dan <strong>Google Picker API</strong> di API Library.
+                        Tambahkan API Permission untuk <strong>Files.ReadWrite</strong> dan <strong>User.Read</strong>.
                       </div>
                     </div>
                     <div className="flex gap-4">
                       <div className="w-6 h-6 rounded-none bg-heritage-ink text-heritage-gold text-[10px] font-bold flex items-center justify-center shrink-0 border border-heritage-gold/20">3</div>
                       <div className="text-sm text-slate-300">
-                        Buat <strong>OAuth Client ID</strong> (Web Application) dan <strong>API Key</strong>.
+                        Buat <strong>OAuth Client ID</strong> dan <strong>Secret Key</strong>.
                       </div>
                     </div>
                     <div className="flex gap-4">
@@ -3158,8 +3244,8 @@ export default function App() {
                       <div className="text-sm text-slate-300">
                         Masuk ke <strong>Settings</strong> di AI Studio ini, lalu tambahkan variabel berikut:
                         <div className="mt-2 bg-black/40 p-3 rounded-lg font-mono text-[10px] border border-white/5 select-all">
-                          VITE_GOOGLE_DRIVE_CLIENT_ID<br/>
-                          VITE_GOOGLE_DRIVE_API_KEY
+                          VITE_ONEDRIVE_CLIENT_ID<br/>
+                          VITE_ONEDRIVE_API_KEY
                         </div>
                       </div>
                     </div>
@@ -3182,7 +3268,7 @@ export default function App() {
                 </div>
                 <div className="mt-4">
                   <a 
-                    href="https://developers.google.com/drive/picker/guides/overview" 
+                    href="https://learn.microsoft.com/en-us/graph/api/resources/onedrive" 
                     target="_blank" 
                     rel="noreferrer"
                     className="w-full py-4 rounded-none bg-white/5 border border-heritage-ink/5 text-heritage-ink/40 font-black uppercase tracking-widest text-[9px] hover:text-heritage-ink transition-all flex items-center justify-center gap-2"

@@ -163,3 +163,29 @@
 .markdown-body ol { @apply list-decimal pl-6 space-y-2 text-slate-300; }
 .markdown-body blockquote { @apply border-l-4 border-legal-gold/50 pl-4 italic text-slate-400 bg-white/5 py-2 pr-4 rounded-r; }
 .markdown-body code { @apply bg-white/10 px-1.5 py-0.5 rounded font-mono text-sm text-blue-300; }
+
+/* Editor Content Specifics */
+.editor-content p {
+  @apply mb-4 leading-relaxed;
+}
+
+.editor-content h1, .editor-content h2, .editor-content h3 {
+  @apply font-serif text-slate-900;
+}
+
+.editor-content b, .editor-content strong {
+  @apply font-bold;
+}
+
+.editor-content i, .editor-content em {
+  @apply italic;
+}
+
+/* Ensure indentation is visible and clean */
+.editor-content [style*="padding-left"] {
+  @apply transition-all;
+}
+
+.editor-content:focus {
+  @apply outline-none;
+}
